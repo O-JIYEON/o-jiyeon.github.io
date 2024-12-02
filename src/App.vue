@@ -1,6 +1,38 @@
 <script setup lang="ts">
 import { RouterLink, RouterView } from 'vue-router'
 import HelloWorld from './components/HelloWorld.vue'
+import axios from "axios";
+import dayjs from "dayjs";
+
+const URL = "https://ilis.koreazinc.co.kr/Ilis/InOut/WebService/InOutWebService.asmx/GetMaterialWarehouseInfoListAPI";
+const fetchData = async () => {
+  try {
+    const res = await axios.post(URL, {
+      IfKey: "0m8QovHqfzpxnLDtqVLzW1kNi1FDE+W5AX7YuoSKEDI=",
+      WarehouseNo: 2,
+      WarehouseKind: '',
+      Date: dayjs().format("YYYYMMDD")
+    }, {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      }
+    });
+
+    if(!(res.status >= 200 && res.status <= 299)) {return null;}
+
+    const xmlParser = new XMLParser();
+    const parse = xmlParser.parse(res.data);
+    const json = JSON.parse(parse.string);
+
+    setMaterialData(() => json.filter((i: IMaterialWarehouseInfo) => i.divisionNo.includes(storage.name.split(" ")[1])));
+    console.log(json);
+  } catch (err) {
+    console.log(err);
+  }
+}
+
+fetchData();
+
 </script>
 
 <template>
