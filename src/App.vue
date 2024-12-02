@@ -26,7 +26,7 @@ const fetchData = async () => {
     // const parse = xmlParser.parse(res.data);
     // const json = JSON.parse(parse.string);
 
-    setMaterialData(() => json.filter((i: IMaterialWarehouseInfo) => i.divisionNo.includes(storage.name.split(" ")[1])));
+    // setMaterialData(() => json.filter((i: IMaterialWarehouseInfo) => i.divisionNo.includes(storage.name.split(" ")[1])));
     // console.log(json);
   } catch (err) {
     console.log(err);
