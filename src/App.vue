@@ -20,12 +20,14 @@ const fetchData = async () => {
 
     if(!(res.status >= 200 && res.status <= 299)) {return null;}
 
-    const xmlParser = new XMLParser();
-    const parse = xmlParser.parse(res.data);
-    const json = JSON.parse(parse.string);
+    console.log(res.data);
+
+    // const xmlParser = new XMLParser();
+    // const parse = xmlParser.parse(res.data);
+    // const json = JSON.parse(parse.string);
 
     setMaterialData(() => json.filter((i: IMaterialWarehouseInfo) => i.divisionNo.includes(storage.name.split(" ")[1])));
-    console.log(json);
+    // console.log(json);
   } catch (err) {
     console.log(err);
   }
