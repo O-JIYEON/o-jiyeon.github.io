@@ -5,6 +5,7 @@ const DEFAULT_CENTER = [127.592328, 34.900905];
 const DEFAULT_BEARING = -38;
 const DEFAULT_PITCH = 0;
 const DEFAULT_GRID_ROTATION = -52;
+const DEFAULT_GRID_OFFSET_Y = 12;
 const METERS_PER_DEGREE_LAT = 111320;
 const MAX_GRID_RENDER_LINES = 500;
 const RAW_MAPBOX_ACCESS_TOKEN = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
@@ -161,14 +162,16 @@ function ensureGridLayer(map) {
   }
 }
 
-function buildGridGeoJson({ corners, origin, gridWidth, gridHeight, rotationDeg }) {
+function buildGridGeoJson({ corners, origin, gridWidth, gridHeight, rotationDeg, offsetX = 0, offsetY = 0 }) {
   const safeGridWidth = Math.max(5, Number(gridWidth) || 50);
   const safeGridHeight = Math.max(5, Number(gridHeight) || 50);
   const radians = (rotationDeg * Math.PI) / 180;
+  const safeOffsetX = Number(offsetX) || 0;
+  const safeOffsetY = Number(offsetY) || 0;
 
   const uvCorners = corners.map((coord) => {
     const local = latLngToLocalMeters(coord.lat, coord.lng, origin);
-    return worldToGridFrame(local.x, local.y, radians);
+    return worldToGridFrame(local.x - safeOffsetX, local.y - safeOffsetY, radians);
   });
 
   const uValues = uvCorners.map((point) => point.u);
@@ -195,6 +198,10 @@ function buildGridGeoJson({ corners, origin, gridWidth, gridHeight, rotationDeg 
   for (let u = firstU; u <= maxU + safeGridWidth; u += safeGridWidth) {
     const a = gridToWorldFrame(u, minV - lineOverdraw, radians);
     const b = gridToWorldFrame(u, maxV + lineOverdraw, radians);
+    a.x += safeOffsetX;
+    a.y += safeOffsetY;
+    b.x += safeOffsetX;
+    b.y += safeOffsetY;
     const aCoord = localMetersToLatLng(a.x, a.y, origin);
     const bCoord = localMetersToLatLng(b.x, b.y, origin);
     features.push({
@@ -213,6 +220,10 @@ function buildGridGeoJson({ corners, origin, gridWidth, gridHeight, rotationDeg 
   for (let v = firstV; v <= maxV + safeGridHeight; v += safeGridHeight) {
     const a = gridToWorldFrame(minU - lineOverdraw, v, radians);
     const b = gridToWorldFrame(maxU + lineOverdraw, v, radians);
+    a.x += safeOffsetX;
+    a.y += safeOffsetY;
+    b.x += safeOffsetX;
+    b.y += safeOffsetY;
     const aCoord = localMetersToLatLng(a.x, a.y, origin);
     const bCoord = localMetersToLatLng(b.x, b.y, origin);
     features.push({
@@ -248,6 +259,8 @@ export default function MapboxRotatePage({ onBack }) {
     gridHeight: 50,
     gridVisible: true,
     rotationDeg: DEFAULT_GRID_ROTATION,
+    offsetX: 0,
+    offsetY: DEFAULT_GRID_OFFSET_Y,
     origin: { lat: DEFAULT_CENTER[1], lng: DEFAULT_CENTER[0] },
   });
   const mapboxAccessToken = normalizeMapboxToken(RAW_MAPBOX_ACCESS_TOKEN);
@@ -256,6 +269,8 @@ export default function MapboxRotatePage({ onBack }) {
   const [gridHeight, setGridHeight] = useState(50);
   const [gridVisible, setGridVisible] = useState(true);
   const [rotationDeg, setRotationDeg] = useState(DEFAULT_GRID_ROTATION);
+  const [offsetX, setOffsetX] = useState(0);
+  const [offsetY, setOffsetY] = useState(DEFAULT_GRID_OFFSET_Y);
   const [origin, setOrigin] = useState({ lat: DEFAULT_CENTER[1], lng: DEFAULT_CENTER[0] });
   const [bearing, setBearing] = useState(DEFAULT_BEARING);
   const [pitch, setPitch] = useState(DEFAULT_PITCH);
@@ -271,10 +286,12 @@ export default function MapboxRotatePage({ onBack }) {
       gridHeight,
       gridVisible,
       rotationDeg,
+      offsetX,
+      offsetY,
       origin,
     };
     scheduleGridDraw();
-  }, [gridWidth, gridHeight, gridVisible, rotationDeg, origin]);
+  }, [gridWidth, gridHeight, gridVisible, rotationDeg, offsetX, offsetY, origin]);
 
   useEffect(() => {
     let cancelled = false;
@@ -398,7 +415,15 @@ export default function MapboxRotatePage({ onBack }) {
       return;
     }
 
-    const { gridWidth: currentGridWidth, gridHeight: currentGridHeight, gridVisible: currentGridVisible, rotationDeg: currentRotationDeg, origin: currentOrigin } =
+    const {
+      gridWidth: currentGridWidth,
+      gridHeight: currentGridHeight,
+      gridVisible: currentGridVisible,
+      rotationDeg: currentRotationDeg,
+      offsetX: currentOffsetX,
+      offsetY: currentOffsetY,
+      origin: currentOrigin,
+    } =
       drawStateRef.current;
 
     const gridSource = map.getSource(GRID_SOURCE_ID);
@@ -426,6 +451,8 @@ export default function MapboxRotatePage({ onBack }) {
       gridWidth: currentGridWidth,
       gridHeight: currentGridHeight,
       rotationDeg: currentRotationDeg,
+      offsetX: currentOffsetX,
+      offsetY: currentOffsetY,
     });
 
     gridSource.setData(data);
@@ -459,6 +486,11 @@ export default function MapboxRotatePage({ onBack }) {
 
     const mapCenter = map.getCenter();
     setOrigin({ lat: mapCenter.lat, lng: mapCenter.lng });
+  }
+
+  function resetGridOffset() {
+    setOffsetX(0);
+    setOffsetY(DEFAULT_GRID_OFFSET_Y);
   }
 
   function spinCamera(delta) {
@@ -552,6 +584,30 @@ export default function MapboxRotatePage({ onBack }) {
             </label>
 
             <label className="field">
+              <span>X offset({offsetX}m)</span>
+              <input
+                type="range"
+                min="-200"
+                max="200"
+                step="1"
+                value={offsetX}
+                onChange={(event) => setOffsetX(Number(event.target.value))}
+              />
+            </label>
+
+            <label className="field">
+              <span>Y offset({offsetY}m)</span>
+              <input
+                type="range"
+                min="-200"
+                max="200"
+                step="1"
+                value={offsetY}
+                onChange={(event) => setOffsetY(Number(event.target.value))}
+              />
+            </label>
+
+            <label className="field">
               <span>지도 회전({bearing}deg)</span>
               <input
                 type="range"
@@ -589,6 +645,9 @@ export default function MapboxRotatePage({ onBack }) {
               <button type="button" onClick={setOriginToCenter}>
                 현재 중심을 원점으로
               </button>
+              <button type="button" onClick={resetGridOffset}>
+                오프셋 초기화
+              </button>
               <button type="button" onClick={resetCamera}>
                 카메라 초기화
               </button>
@@ -620,6 +679,10 @@ export default function MapboxRotatePage({ onBack }) {
           <div>
             <dt>렌더 선 수</dt>
             <dd>{renderCount}</dd>
+          </div>
+          <div>
+            <dt>격자 오프셋</dt>
+            <dd>{`${offsetX}m, ${offsetY}m`}</dd>
           </div>
         </dl>
 
