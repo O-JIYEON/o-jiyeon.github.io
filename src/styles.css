@@ -141,6 +141,10 @@ body {
   font-size: 18px;
 }
 
+.dev-panel-block {
+  display: grid;
+}
+
 .field,
 .toggle-row {
   display: grid;
