@@ -39,9 +39,60 @@ body {
   height: 100%;
 }
 
+.route-home {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 24px;
+}
+
+.route-home__panel {
+  width: min(520px, 100%);
+  padding: 28px;
+  border: 1px solid var(--panel-border);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top right, rgba(149, 240, 183, 0.18), transparent 32%),
+    linear-gradient(180deg, rgba(37, 55, 61, 0.92), rgba(18, 26, 31, 0.96));
+  box-shadow: var(--panel-shadow);
+}
+
+.route-home__panel h1 {
+  margin: 0;
+  font-size: clamp(28px, 4vw, 42px);
+}
+
+.route-home__copy {
+  margin: 14px 0 0;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.route-home__actions {
+  display: grid;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.route-home__actions button {
+  min-height: 52px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(144, 240, 183, 0.18), rgba(255, 213, 106, 0.18));
+  color: var(--text-main);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .map-root {
   width: 100%;
   height: 100%;
+}
+
+.map-root--mapbox .mapboxgl-ctrl-bottom-right {
+  margin: 0 14px 14px 0;
 }
 
 .control-panel {
@@ -58,6 +109,12 @@ body {
     var(--panel-bg);
   backdrop-filter: blur(14px);
   box-shadow: var(--panel-shadow);
+}
+
+.control-panel--mapbox {
+  background:
+    linear-gradient(180deg, rgba(65, 88, 93, 0.72), rgba(33, 50, 54, 0.82)),
+    var(--panel-bg);
 }
 
 .back-button {
@@ -149,6 +206,16 @@ body {
   color: rgba(255, 222, 163, 0.92);
   font-size: 11px;
   line-height: 1.45;
+}
+
+.mapbox-status {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(226, 245, 234, 0.82);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .status-list {

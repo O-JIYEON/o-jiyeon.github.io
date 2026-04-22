@@ -1,6 +1,6 @@
 # EchoTech Grid Demo
 
-React + Vite + 네이버 지도 JS API 기반의 커스텀 격자 레이어 데모입니다.
+React + Vite + 네이버 지도 JS API, Mapbox GL JS 기반의 지도 데모입니다.
 
 ## 실행
 
@@ -12,6 +12,16 @@ npm run dev
 ```
 
 브라우저에서 `http://localhost:8082` 으로 접속합니다.
+
+## 환경 변수
+
+Mapbox 회전 페이지는 프로젝트 루트 `.env` 파일의 아래 값을 사용합니다.
+
+```env
+VITE_MAPBOX_ACCESS_TOKEN=your_mapbox_access_token_here
+```
+
+`.env.example`를 복사해서 `.env`를 만든 뒤 개발 서버를 다시 시작하세요.
 
 ## GitHub Pages 배포
 
@@ -30,6 +40,7 @@ npm run build
 ## 포함 기능
 
 - 네이버 지도 위 미터 단위 커스텀 격자 레이어
+- Mapbox GL JS 기반 회전 가능한 지도 페이지
 - 가로/세로 셀 크기 조정
 - 격자 표시 토글
 - 네이버 기본 지도 타입 전환
@@ -40,6 +51,7 @@ npm run build
 ## 메모
 
 - 사용자 제공 키(`s31twgmyf4`)로 네이버 지도 SDK를 동적 로드합니다.
+- Mapbox 페이지는 `VITE_MAPBOX_ACCESS_TOKEN` 환경 변수가 있어야 동작합니다.
 - 격자 간격은 위경도 변환 근사값을 사용하므로 넓은 영역에서는 실제 거리와 약간 차이가 날 수 있습니다.
 - 네이버 기본 2D 지도는 자유 회전이 제한적일 수 있어 현재 슬라이더는 격자 회전에 적용됩니다.
 - NCP 콘솔 웹 서비스 URL에 `http://localhost:8082`, `http://127.0.0.1:8082` 등록이 필요합니다.

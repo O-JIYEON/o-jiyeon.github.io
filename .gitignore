@@ -4,6 +4,7 @@ node_modules
 dist.zip
 
 # local env files
+.env
 .env.*.local
 
 # Log files
