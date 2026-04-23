@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 
-const IS_DEV = import.meta.env.DEV;
 const DEFAULT_CENTER = [127.592328, 34.900905];
 const DEFAULT_BEARING = -38;
 const DEFAULT_PITCH = 0;
@@ -324,14 +323,9 @@ export default function MapboxRotatePage({ onBack }) {
         });
 
         map.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), "bottom-right");
-        if (IS_DEV) {
-          map.dragRotate.enable();
-          map.touchZoomRotate.enableRotation();
-          map.keyboard.enable();
-        } else {
-          map.dragRotate.disable();
-          map.touchZoomRotate.disableRotation();
-        }
+        map.dragRotate.enable();
+        map.touchZoomRotate.enableRotation();
+        map.keyboard.enable();
 
         const marker = new mapboxgl.Marker({ color: "#9cf2bd" })
           .setLngLat(DEFAULT_CENTER)
@@ -359,11 +353,7 @@ export default function MapboxRotatePage({ onBack }) {
           }
           applyKoreanLabels(map);
           ensureGridLayer(map);
-          setStatusMessage(
-            IS_DEV
-              ? "개발 모드입니다. 우클릭 드래그로 지도 회전과 틸트 수정이 가능합니다."
-              : "토큰 확인 완료. 운영 모드에서는 개발용 회전/틸트 제어가 숨겨집니다.",
-          );
+          setStatusMessage("우클릭 드래그로 지도 회전과 틸트 수정이 가능합니다.");
           syncStatus();
           scheduleGridDraw();
         });
@@ -538,122 +528,120 @@ export default function MapboxRotatePage({ onBack }) {
 
         <p className="eyebrow">MAPBOX VIEW</p>
         <h1>Rotate Map</h1>
-        {IS_DEV ? (
-          <section className="dev-panel-block">
-            <label className="field">
-              <span>가로(m)</span>
-              <input
-                type="number"
-                min="5"
-                step="5"
-                value={gridWidth}
-                onChange={(event) => setGridWidth(Number(event.target.value))}
-              />
-            </label>
+        <section className="dev-panel-block">
+          <label className="field">
+            <span>가로(m)</span>
+            <input
+              type="number"
+              min="5"
+              step="5"
+              value={gridWidth}
+              onChange={(event) => setGridWidth(Number(event.target.value))}
+            />
+          </label>
 
-            <label className="field">
-              <span>세로(m)</span>
-              <input
-                type="number"
-                min="5"
-                step="5"
-                value={gridHeight}
-                onChange={(event) => setGridHeight(Number(event.target.value))}
-              />
-            </label>
+          <label className="field">
+            <span>세로(m)</span>
+            <input
+              type="number"
+              min="5"
+              step="5"
+              value={gridHeight}
+              onChange={(event) => setGridHeight(Number(event.target.value))}
+            />
+          </label>
 
-            <label className="toggle-row">
-              <span>격자 표시</span>
-              <input
-                type="checkbox"
-                checked={gridVisible}
-                onChange={(event) => setGridVisible(event.target.checked)}
-              />
-            </label>
+          <label className="toggle-row">
+            <span>격자 표시</span>
+            <input
+              type="checkbox"
+              checked={gridVisible}
+              onChange={(event) => setGridVisible(event.target.checked)}
+            />
+          </label>
 
-            <label className="field">
-              <span>격자 회전({rotationDeg}deg)</span>
-              <input
-                type="range"
-                min="-180"
-                max="180"
-                step="1"
-                value={rotationDeg}
-                onChange={(event) => setRotationDeg(Number(event.target.value))}
-              />
-            </label>
+          <label className="field">
+            <span>격자 회전({rotationDeg}deg)</span>
+            <input
+              type="range"
+              min="-180"
+              max="180"
+              step="1"
+              value={rotationDeg}
+              onChange={(event) => setRotationDeg(Number(event.target.value))}
+            />
+          </label>
 
-            <label className="field">
-              <span>X offset({offsetX}m)</span>
-              <input
-                type="range"
-                min="-200"
-                max="200"
-                step="1"
-                value={offsetX}
-                onChange={(event) => setOffsetX(Number(event.target.value))}
-              />
-            </label>
+          <label className="field">
+            <span>X offset({offsetX}m)</span>
+            <input
+              type="range"
+              min="-200"
+              max="200"
+              step="1"
+              value={offsetX}
+              onChange={(event) => setOffsetX(Number(event.target.value))}
+            />
+          </label>
 
-            <label className="field">
-              <span>Y offset({offsetY}m)</span>
-              <input
-                type="range"
-                min="-200"
-                max="200"
-                step="1"
-                value={offsetY}
-                onChange={(event) => setOffsetY(Number(event.target.value))}
-              />
-            </label>
+          <label className="field">
+            <span>Y offset({offsetY}m)</span>
+            <input
+              type="range"
+              min="-200"
+              max="200"
+              step="1"
+              value={offsetY}
+              onChange={(event) => setOffsetY(Number(event.target.value))}
+            />
+          </label>
 
-            <label className="field">
-              <span>지도 회전({bearing}deg)</span>
-              <input
-                type="range"
-                min="-180"
-                max="180"
-                step="1"
-                value={bearing}
-                onChange={(event) => setMapBearing(Number(event.target.value))}
-              />
-            </label>
+          <label className="field">
+            <span>지도 회전({bearing}deg)</span>
+            <input
+              type="range"
+              min="-180"
+              max="180"
+              step="1"
+              value={bearing}
+              onChange={(event) => setMapBearing(Number(event.target.value))}
+            />
+          </label>
 
-            <label className="field">
-              <span>지도 틸트({pitch}deg)</span>
-              <input
-                type="range"
-                min="0"
-                max="85"
-                step="1"
-                value={pitch}
-                onChange={(event) => setMapPitch(Number(event.target.value))}
-              />
-            </label>
+          <label className="field">
+            <span>지도 틸트({pitch}deg)</span>
+            <input
+              type="range"
+              min="0"
+              max="85"
+              step="1"
+              value={pitch}
+              onChange={(event) => setMapPitch(Number(event.target.value))}
+            />
+          </label>
 
-            <p className="rotation-hint">
-              개발 모드에서는 지도와 격자를 슬라이더로 수정할 수 있고, 지도는 우클릭 드래그로 rotation과 tilt도 직접 조정할 수 있습니다.
-            </p>
+          <p className="rotation-hint">
+            지도와 격자를 슬라이더로 수정할 수 있고, 지도는 우클릭 드래그로 rotation과 tilt도 직접 조정할 수 있습니다.
+          </p>
 
-            <div className="button-row">
-              <button type="button" onClick={() => spinCamera(-30)}>
-                좌로 30deg
-              </button>
-              <button type="button" onClick={() => spinCamera(30)}>
-                우로 30deg
-              </button>
-              <button type="button" onClick={setOriginToCenter}>
-                현재 중심을 원점으로
-              </button>
-              <button type="button" onClick={resetGridOffset}>
-                오프셋 초기화
-              </button>
-              <button type="button" onClick={resetCamera}>
-                카메라 초기화
-              </button>
-            </div>
-          </section>
-        ) : null}
+          <div className="button-row">
+            <button type="button" onClick={() => spinCamera(-30)}>
+              좌로 30deg
+            </button>
+            <button type="button" onClick={() => spinCamera(30)}>
+              우로 30deg
+            </button>
+            <button type="button" onClick={setOriginToCenter}>
+              현재 중심을 원점으로
+            </button>
+            <button type="button" onClick={resetGridOffset}>
+              오프셋 초기화
+            </button>
+            <button type="button" onClick={resetCamera}>
+              카메라 초기화
+            </button>
+          </div>
+        </section>
 
         <dl className="status-list">
           <div>
