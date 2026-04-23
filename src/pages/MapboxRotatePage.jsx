@@ -322,9 +322,9 @@ export default function MapboxRotatePage({ onBack }) {
           antialias: true,
         });
 
-        map.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), "bottom-right");
+        map.addControl(new mapboxgl.NavigationControl({ visualizePitch: false }), "bottom-right");
         map.dragRotate.enable();
-        map.touchZoomRotate.enableRotation();
+        map.touchZoomRotate.disableRotation();
         map.keyboard.enable();
 
         const marker = new mapboxgl.Marker({ color: "#9cf2bd" })
@@ -344,7 +344,10 @@ export default function MapboxRotatePage({ onBack }) {
           setCenter(`${mapCenter.lat.toFixed(6)}, ${mapCenter.lng.toFixed(6)}`);
           setZoom(map.getZoom().toFixed(2));
           setBearing(Math.round(map.getBearing()));
-          setPitch(Math.round(map.getPitch()));
+          if (map.getPitch() !== DEFAULT_PITCH) {
+            map.setPitch(DEFAULT_PITCH);
+          }
+          setPitch(DEFAULT_PITCH);
         };
 
         map.on("load", () => {
@@ -353,7 +356,7 @@ export default function MapboxRotatePage({ onBack }) {
           }
           applyKoreanLabels(map);
           ensureGridLayer(map);
-          setStatusMessage("우클릭 드래그로 지도 회전과 틸트 수정이 가능합니다.");
+          setStatusMessage("지도 회전은 가능하고, 틸트는 0deg로 고정됩니다.");
           syncStatus();
           scheduleGridDraw();
         });
@@ -369,10 +372,8 @@ export default function MapboxRotatePage({ onBack }) {
         });
         map.on("move", syncStatus);
         map.on("rotate", syncStatus);
-        map.on("pitch", syncStatus);
         map.on("move", scheduleGridDraw);
         map.on("rotate", scheduleGridDraw);
-        map.on("pitch", scheduleGridDraw);
         map.on("zoom", scheduleGridDraw);
       })
       .catch((error) => {
@@ -507,18 +508,6 @@ export default function MapboxRotatePage({ onBack }) {
     });
   }
 
-  function setMapPitch(nextPitch) {
-    const map = mapRef.current;
-    if (!map) {
-      return;
-    }
-
-    map.easeTo({
-      pitch: nextPitch,
-      duration: 0,
-    });
-  }
-
   return (
     <div className="app-shell">
       <aside className="control-panel control-panel--mapbox">
@@ -608,20 +597,8 @@ export default function MapboxRotatePage({ onBack }) {
             />
           </label>
 
-          <label className="field">
-            <span>지도 틸트({pitch}deg)</span>
-            <input
-              type="range"
-              min="0"
-              max="85"
-              step="1"
-              value={pitch}
-              onChange={(event) => setMapPitch(Number(event.target.value))}
-            />
-          </label>
-
           <p className="rotation-hint">
-            지도와 격자를 슬라이더로 수정할 수 있고, 지도는 우클릭 드래그로 rotation과 tilt도 직접 조정할 수 있습니다.
+            지도와 격자를 슬라이더로 수정할 수 있고, 지도는 우클릭 드래그로 rotation만 직접 조정할 수 있습니다. 틸트는 0deg로 고정됩니다.
           </p>
 
           <div className="button-row">
