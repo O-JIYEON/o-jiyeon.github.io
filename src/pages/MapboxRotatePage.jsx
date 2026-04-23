@@ -552,7 +552,7 @@ export default function MapboxRotatePage({ onBack }) {
           <label className="field">
             <span>격자 회전({rotationDeg}deg)</span>
             <input
-              type="range"
+              type="number"
               min="-180"
               max="180"
               step="1"
@@ -564,7 +564,7 @@ export default function MapboxRotatePage({ onBack }) {
           <label className="field">
             <span>X offset({offsetX}m)</span>
             <input
-              type="range"
+              type="number"
               min="-200"
               max="200"
               step="1"
@@ -576,7 +576,7 @@ export default function MapboxRotatePage({ onBack }) {
           <label className="field">
             <span>Y offset({offsetY}m)</span>
             <input
-              type="range"
+              type="number"
               min="-200"
               max="200"
               step="1"
@@ -588,7 +588,7 @@ export default function MapboxRotatePage({ onBack }) {
           <label className="field">
             <span>지도 회전({bearing}deg)</span>
             <input
-              type="range"
+              type="number"
               min="-180"
               max="180"
               step="1"
@@ -598,7 +598,7 @@ export default function MapboxRotatePage({ onBack }) {
           </label>
 
           <p className="rotation-hint">
-            지도와 격자를 슬라이더로 수정할 수 있고, 지도는 우클릭 드래그로 rotation만 직접 조정할 수 있습니다. 틸트는 0deg로 고정됩니다.
+            지도와 격자 값은 숫자로 직접 입력할 수 있고, 지도는 우클릭 드래그로 rotation만 직접 조정할 수 있습니다. 틸트는 0deg로 고정됩니다.
           </p>
 
           <div className="button-row">
