@@ -296,6 +296,20 @@ export default function MapboxRotatePage({ onBack }) {
     );
   }
 
+  function getSnappedGridDelta(fromPoint, toPoint) {
+    const { origin: snapOrigin, rotationDeg, gridWidth, gridHeight } = drawStateRef.current;
+    const radians = (rotationDeg * Math.PI) / 180;
+    const fromLocal = latLngToLocalMeters(fromPoint.lat, fromPoint.lng, snapOrigin);
+    const toLocal = latLngToLocalMeters(toPoint.lat, toPoint.lng, snapOrigin);
+    const fromGrid = worldToGridFrame(fromLocal.x, fromLocal.y, radians);
+    const toGrid = worldToGridFrame(toLocal.x, toLocal.y, radians);
+    const deltaU = toGrid.u - fromGrid.u;
+    const deltaV = toGrid.v - fromGrid.v;
+    const snappedU = Math.round(deltaU / Math.max(1, gridWidth)) * Math.max(1, gridWidth);
+    const snappedV = Math.round(deltaV / Math.max(1, gridHeight)) * Math.max(1, gridHeight);
+    return gridToWorldFrame(snappedU, snappedV, radians);
+  }
+
   function formatCoordinate(point) {
     return `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}`;
   }
@@ -572,10 +586,8 @@ export default function MapboxRotatePage({ onBack }) {
   }
 
   function translateCircle(circle, dx, dy) {
-    const nextCenter = snapPointToMeter(offsetLatLng(circle.center, dx, dy));
-    const nextEdgePoint = circle.edgePoint
-      ? snapPointToMeter(offsetLatLng(circle.edgePoint, dx, dy))
-      : undefined;
+    const nextCenter = offsetLatLng(circle.center, dx, dy);
+    const nextEdgePoint = circle.edgePoint ? offsetLatLng(circle.edgePoint, dx, dy) : undefined;
     return {
       ...circle,
       center: nextCenter,
@@ -588,14 +600,14 @@ export default function MapboxRotatePage({ onBack }) {
   function translatePolygon(polygon, dx, dy) {
     return {
       ...polygon,
-      points: polygon.points.map((point) => snapPointToMeter(offsetLatLng(point, dx, dy))),
+      points: polygon.points.map((point) => offsetLatLng(point, dx, dy)),
     };
   }
 
   function translateRectangle(rectangle, dx, dy) {
     return {
       ...rectangle,
-      points: rectangle.points.map((point) => snapPointToMeter(offsetLatLng(point, dx, dy))),
+      points: rectangle.points.map((point) => offsetLatLng(point, dx, dy)),
     };
   }
 
@@ -608,7 +620,19 @@ export default function MapboxRotatePage({ onBack }) {
     dragStateRef.current = {
       measureId: feature.properties.measureId,
       shapeType: feature.properties.shapeType,
-      lastPoint: { lat: event.lngLat.lat, lng: event.lngLat.lng },
+      startPoint: { lat: event.lngLat.lat, lng: event.lngLat.lng },
+      initialCircle:
+        feature.properties.shapeType === "circle"
+          ? circlesRef.current.find((circle) => circle.id === feature.properties.measureId) ?? null
+          : null,
+      initialPolygon:
+        feature.properties.shapeType === "polygon"
+          ? polygonsRef.current.find((polygon) => polygon.id === feature.properties.measureId) ?? null
+          : null,
+      initialRectangle:
+        feature.properties.shapeType === "rectangle"
+          ? rectanglesRef.current.find((rectangle) => rectangle.id === feature.properties.measureId) ?? null
+          : null,
       moved: false,
     };
     setSelectedShape({ type: feature.properties.shapeType, id: feature.properties.measureId });
@@ -627,12 +651,14 @@ export default function MapboxRotatePage({ onBack }) {
     }
 
     const currentPoint = { lat: event.lngLat.lat, lng: event.lngLat.lng };
-    const { dx, dy } = getDeltaMetersBetween(dragState.lastPoint, currentPoint);
-    dragStateRef.current = { ...dragState, lastPoint: currentPoint, moved: true };
+    const { x: dx, y: dy } = getSnappedGridDelta(dragState.startPoint, currentPoint);
+    dragStateRef.current = { ...dragState, moved: true };
 
     if (dragState.shapeType === "circle") {
       const nextCircles = circlesRef.current.map((circle) =>
-        circle.id === dragState.measureId ? translateCircle(circle, dx, dy) : circle,
+        circle.id === dragState.measureId && dragState.initialCircle
+          ? translateCircle(dragState.initialCircle, dx, dy)
+          : circle,
       );
       circlesRef.current = nextCircles;
       setCircleMeasures(nextCircles);
@@ -641,7 +667,9 @@ export default function MapboxRotatePage({ onBack }) {
 
     if (dragState.shapeType === "polygon") {
       const nextPolygons = polygonsRef.current.map((polygon) =>
-        polygon.id === dragState.measureId ? translatePolygon(polygon, dx, dy) : polygon,
+        polygon.id === dragState.measureId && dragState.initialPolygon
+          ? translatePolygon(dragState.initialPolygon, dx, dy)
+          : polygon,
       );
       polygonsRef.current = nextPolygons;
       setPolygonMeasures(nextPolygons);
@@ -650,7 +678,9 @@ export default function MapboxRotatePage({ onBack }) {
 
     if (dragState.shapeType === "rectangle") {
       const nextRectangles = rectanglesRef.current.map((rectangle) =>
-        rectangle.id === dragState.measureId ? translateRectangle(rectangle, dx, dy) : rectangle,
+        rectangle.id === dragState.measureId && dragState.initialRectangle
+          ? translateRectangle(dragState.initialRectangle, dx, dy)
+          : rectangle,
       );
       rectanglesRef.current = nextRectangles;
       setRectangleMeasures(nextRectangles);
