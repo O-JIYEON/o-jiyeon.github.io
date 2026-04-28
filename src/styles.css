@@ -120,6 +120,29 @@ body {
     var(--panel-bg);
 }
 
+.measure-panel {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 20;
+  width: 248px;
+  max-height: calc(100vh - 20px);
+  padding: 14px;
+  overflow-y: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(87, 80, 50, 0.76), rgba(52, 47, 31, 0.82)),
+    var(--panel-bg);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--panel-shadow);
+}
+
+.measure-panel h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
 .control-panel::-webkit-scrollbar {
   width: 8px;
 }
@@ -217,6 +240,43 @@ body {
   cursor: pointer;
 }
 
+.measure-mode-row,
+.measure-action-row {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.measure-mode-row {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.measure-mode-row button,
+.measure-action-row button {
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-main);
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.measure-mode-row button.is-active {
+  border-color: rgba(255, 213, 106, 0.8);
+  background: linear-gradient(135deg, rgba(255, 213, 106, 0.32), rgba(144, 240, 183, 0.22));
+  color: #fff4d0;
+}
+
+.measure-action-row {
+  grid-template-columns: 1fr;
+}
+
+.measure-status-list {
+  margin-top: 4px;
+}
+
 .rotation-hint {
   margin: -2px 0 10px;
   color: rgba(255, 222, 163, 0.92);
@@ -281,5 +341,13 @@ body {
     width: min(320px, calc(100vw - 20px));
     max-height: calc(100vh - 20px);
     overflow: auto;
+  }
+
+  .measure-panel {
+    top: auto;
+    right: 10px;
+    bottom: 10px;
+    width: min(320px, calc(100vw - 20px));
+    max-height: 42vh;
   }
 }
