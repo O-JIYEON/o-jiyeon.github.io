@@ -1,4 +1,14 @@
-import { DEFAULT_GRID_OFFSET_Y, DEFAULT_GRID_ROTATION, GRID_LAYER_ID, GRID_SOURCE_ID, KOREAN_LABEL_FIELD, MAPBOX_GL_CSS_ID, MAPBOX_GL_SCRIPT_ID, MAX_GRID_RENDER_LINES } from "./constants";
+import {
+  DEFAULT_GRID_OFFSET_Y,
+  DEFAULT_GRID_ROTATION,
+  DEFAULT_GRID_SIZE_METERS,
+  GRID_LAYER_ID,
+  GRID_SOURCE_ID,
+  KOREAN_LABEL_FIELD,
+  MAPBOX_GL_CSS_ID,
+  MAPBOX_GL_SCRIPT_ID,
+  MAX_GRID_RENDER_LINES,
+} from "./constants";
 
 const METERS_PER_DEGREE_LAT = 111320;
 
@@ -14,8 +24,8 @@ export function normalizeMapboxToken(value) {
 
 export function getDefaultDrawState() {
   return {
-    gridWidth: 50,
-    gridHeight: 50,
+    gridWidth: DEFAULT_GRID_SIZE_METERS,
+    gridHeight: DEFAULT_GRID_SIZE_METERS,
     gridVisible: true,
     rotationDeg: DEFAULT_GRID_ROTATION,
     offsetX: 0,
@@ -49,7 +59,7 @@ export function localMetersToLatLng(x, y, origin) {
   };
 }
 
-function worldToGridFrame(x, y, radians) {
+export function worldToGridFrame(x, y, radians) {
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
   return {
@@ -58,7 +68,7 @@ function worldToGridFrame(x, y, radians) {
   };
 }
 
-function gridToWorldFrame(u, v, radians) {
+export function gridToWorldFrame(u, v, radians) {
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
   return {

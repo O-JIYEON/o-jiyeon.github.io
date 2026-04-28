@@ -96,6 +96,15 @@ export function offsetLatLng(point, deltaXMeters, deltaYMeters) {
   };
 }
 
+function createRectanglePoints(start, end) {
+  return [
+    { lat: start.lat, lng: start.lng },
+    { lat: start.lat, lng: end.lng },
+    { lat: end.lat, lng: end.lng },
+    { lat: end.lat, lng: start.lng },
+  ];
+}
+
 export function getDeltaMetersBetween(a, b) {
   const averageLatitude = (a.lat + b.lat) / 2;
   return {
@@ -158,7 +167,15 @@ function createLabelFeature(point, label, measureId, shapeType) {
   };
 }
 
-export function buildMeasurementFeatures(mode, points, previewPoint, circles, polygons, distances) {
+export function buildMeasurementFeatures(
+  mode,
+  points,
+  previewPoint,
+  circles,
+  polygons,
+  rectangles,
+  draftRectanglePoints = null,
+) {
   const features = [];
 
   circles.forEach((circle) => {
@@ -237,31 +254,47 @@ export function buildMeasurementFeatures(mode, points, previewPoint, circles, po
     }
   });
 
-  distances.forEach((distance) => {
+  rectangles.forEach((rectangle) => {
+    const closedCoordinates = [...rectangle.points, rectangle.points[0]].map((point) => [point.lng, point.lat]);
     features.push({
       type: "Feature",
       geometry: {
-        type: "LineString",
-        coordinates: [
-          [distance.start.lng, distance.start.lat],
-          [distance.end.lng, distance.end.lat],
-        ],
+        type: "Polygon",
+        coordinates: [closedCoordinates],
       },
       properties: {
-        role: "distance-line",
+        role: "rectangle-fill",
         draggable: true,
-        measureId: distance.id,
-        shapeType: "distance",
+        measureId: rectangle.id,
+        shapeType: "rectangle",
       },
     });
     features.push(
-      createLabelFeature(
-        getMidpoint(distance.start, distance.end),
-        formatMeters(haversineDistanceMeters(distance.start, distance.end)),
-        distance.id,
-        "distance",
-      ),
+      {
+        type: "Feature",
+        geometry: {
+          type: "LineString",
+          coordinates: closedCoordinates,
+        },
+        properties: {
+          role: "rectangle-outline",
+          draggable: true,
+          measureId: rectangle.id,
+          shapeType: "rectangle",
+        },
+      },
     );
+    const centroid = getPolygonCentroid(rectangle.points);
+    if (centroid) {
+      features.push(
+        createLabelFeature(
+          centroid,
+          formatSquareMeters(polygonAreaSquareMeters(rectangle.points)),
+          rectangle.id,
+          "rectangle",
+        ),
+      );
+    }
   });
 
   points.forEach((point, index) => {
@@ -291,23 +324,33 @@ export function buildMeasurementFeatures(mode, points, previewPoint, circles, po
     });
   }
 
-  if (mode === MEASURE_MODES.distance) {
-    const linePoints = previewPoint ? [...points, previewPoint] : points;
-    if (linePoints.length >= 2) {
+  if (mode === MEASURE_MODES.rectangle && points[0]) {
+    const rectanglePoints = draftRectanglePoints ?? (previewPoint ?? points[1] ? createRectanglePoints(points[0], previewPoint ?? points[1]) : null);
+    if (rectanglePoints) {
+      features.push({
+        type: "Feature",
+        geometry: {
+          type: "Polygon",
+          coordinates: [[...rectanglePoints, rectanglePoints[0]].map((point) => [point.lng, point.lat])],
+        },
+        properties: {
+          role: "rectangle-fill",
+        },
+      });
       features.push({
         type: "Feature",
         geometry: {
           type: "LineString",
-          coordinates: linePoints.map((point) => [point.lng, point.lat]),
+          coordinates: [...rectanglePoints, rectanglePoints[0]].map((point) => [point.lng, point.lat]),
         },
         properties: {
-          role: "distance-line",
+          role: "rectangle-outline",
         },
       });
     }
   }
 
-  if (mode === MEASURE_MODES.area) {
+  if (mode === MEASURE_MODES.polygon) {
     const polygonPoints = previewPoint ? [...points, previewPoint] : points;
     if (polygonPoints.length >= 2) {
       features.push({
@@ -335,7 +378,7 @@ export function buildMeasurementFeatures(mode, points, previewPoint, circles, po
     }
   }
 
-  if (mode === MEASURE_MODES.radius && points[0]) {
+  if (mode === MEASURE_MODES.circle && points[0]) {
     const edgePoint = previewPoint ?? points[1];
     if (edgePoint) {
       const radiusMeters = haversineDistanceMeters(points[0], edgePoint);
@@ -458,14 +501,21 @@ export function ensureMeasurementLayers(map) {
 }
 
 export function getMeasureModeLabel(mode) {
-  if (mode === MEASURE_MODES.radius) {
-    return "반경";
+  if (mode === MEASURE_MODES.circle) {
+    return "원";
   }
-  if (mode === MEASURE_MODES.area) {
-    return "면적";
+  if (mode === MEASURE_MODES.polygon) {
+    return "다각형";
   }
-  if (mode === MEASURE_MODES.distance) {
-    return "거리";
+  if (mode === MEASURE_MODES.rectangle) {
+    return "사각형";
   }
   return "없음";
+}
+
+export function createRectangleFromDiagonal(id, start, end) {
+  return {
+    id,
+    points: createRectanglePoints(start, end),
+  };
 }

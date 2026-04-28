@@ -5,23 +5,22 @@ export default function MeasurePanel({
   activateMeasureMode,
   finishMeasurement,
   clearMeasurement,
-  measureValue,
-  measureSecondaryValue,
   measureHint,
+  selectedCoordinateRows,
 }) {
   return (
-    <aside className="measure-panel" aria-label="측정 도구">
-      <p className="eyebrow">MEASURE TOOLS</p>
-      <h2>측정</h2>
+    <aside className="measure-panel" aria-label="그리기 도구">
+      <p className="eyebrow">DRAWING TOOLS</p>
+      <h2>그리기 도구</h2>
       <div className="measure-mode-row">
-        <button type="button" className={measureMode === MEASURE_MODES.radius ? "is-active" : ""} onClick={() => activateMeasureMode(MEASURE_MODES.radius)}>
-          반경
+        <button type="button" className={measureMode === MEASURE_MODES.circle ? "is-active" : ""} onClick={() => activateMeasureMode(MEASURE_MODES.circle)}>
+          원
         </button>
-        <button type="button" className={measureMode === MEASURE_MODES.area ? "is-active" : ""} onClick={() => activateMeasureMode(MEASURE_MODES.area)}>
-          면적
+        <button type="button" className={measureMode === MEASURE_MODES.polygon ? "is-active" : ""} onClick={() => activateMeasureMode(MEASURE_MODES.polygon)}>
+          다각형
         </button>
-        <button type="button" className={measureMode === MEASURE_MODES.distance ? "is-active" : ""} onClick={() => activateMeasureMode(MEASURE_MODES.distance)}>
-          거리
+        <button type="button" className={measureMode === MEASURE_MODES.rectangle ? "is-active" : ""} onClick={() => activateMeasureMode(MEASURE_MODES.rectangle)}>
+          사각형
         </button>
       </div>
       <div className="measure-action-row">
@@ -38,21 +37,24 @@ export default function MeasurePanel({
           종료
         </button>
       </div>
-      <dl className="status-list measure-status-list">
-        <div>
-          <dt>현재 도구</dt>
-          <dd>{getMeasureModeLabel(measureMode)}</dd>
-        </div>
-        <div>
-          <dt>주요 값</dt>
-          <dd>{measureValue}</dd>
-        </div>
-        <div>
-          <dt>보조 값</dt>
-          <dd>{measureSecondaryValue}</dd>
-        </div>
-      </dl>
-      <p className="mapbox-status">{measureHint}</p>
+      {measureMode === MEASURE_MODES.none ? null : (
+        <>
+          <p className="mapbox-status">{`${getMeasureModeLabel(measureMode)}: ${measureHint}`}</p>
+          {selectedCoordinateRows.length > 0 ? (
+            <div className="coordinate-panel">
+              <p className="coordinate-panel__title">선택 좌표</p>
+              <div className="coordinate-list">
+                {selectedCoordinateRows.map((row) => (
+                  <div key={row.label} className="coordinate-row">
+                    <span>{row.label}</span>
+                    <code>{row.value}</code>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
     </aside>
   );
 }

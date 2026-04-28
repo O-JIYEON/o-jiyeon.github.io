@@ -264,9 +264,10 @@ body {
 }
 
 .measure-mode-row button.is-active {
-  border-color: rgba(255, 213, 106, 0.8);
-  background: linear-gradient(135deg, rgba(255, 213, 106, 0.32), rgba(144, 240, 183, 0.22));
-  color: #fff4d0;
+  border-color: rgba(255, 213, 106, 0.96);
+  background: linear-gradient(135deg, rgba(255, 213, 106, 0.82), rgba(144, 240, 183, 0.52));
+  color: #132026;
+  box-shadow: 0 0 0 1px rgba(255, 213, 106, 0.24), 0 10px 24px rgba(255, 213, 106, 0.22);
 }
 
 .measure-action-row {
@@ -275,6 +276,48 @@ body {
 
 .measure-status-list {
   margin-top: 4px;
+}
+
+.coordinate-panel {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.coordinate-panel__title {
+  margin: 0 0 8px;
+  color: rgba(255, 244, 208, 0.92);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.coordinate-list {
+  display: grid;
+  gap: 6px;
+}
+
+.coordinate-row {
+  display: grid;
+  gap: 4px;
+}
+
+.coordinate-row span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.coordinate-row code {
+  display: block;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  color: #f5f5f5;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: normal;
+  word-break: break-all;
 }
 
 .rotation-hint {

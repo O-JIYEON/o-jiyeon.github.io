@@ -6,7 +6,9 @@ import {
   DEFAULT_CENTER,
   DEFAULT_GRID_OFFSET_Y,
   DEFAULT_GRID_ROTATION,
+  DEFAULT_GRID_SIZE_METERS,
   DEFAULT_PITCH,
+  DRAWING_SNAP_METERS,
   GRID_SOURCE_ID,
   MAPBOX_STYLE,
   MEASURE_FILL_LAYER_ID,
@@ -20,18 +22,19 @@ import {
   ensureGridLayer,
   ensureMapboxGlCss,
   ensureMapboxGlScript,
+  gridToWorldFrame,
+  latLngToLocalMeters,
+  localMetersToLatLng,
   normalizeMapboxToken,
+  worldToGridFrame,
 } from "../features/mapbox/gridUtils";
 import {
   buildMeasurementFeatures,
   ensureMeasurementLayers,
-  formatMeters,
-  formatSquareMeters,
   getDeltaMetersBetween,
   haversineDistanceMeters,
   MEASURE_MODES,
   offsetLatLng,
-  polygonAreaSquareMeters,
 } from "../features/mapbox/measurementUtils";
 
 export default function MapboxRotatePage({ onBack }) {
@@ -47,12 +50,12 @@ export default function MapboxRotatePage({ onBack }) {
   });
   const circlesRef = useRef([]);
   const polygonsRef = useRef([]);
-  const distancesRef = useRef([]);
+  const rectanglesRef = useRef([]);
   const dragStateRef = useRef(null);
   const dragSuppressUntilRef = useRef(0);
   const drawStateRef = useRef({
-    gridWidth: 50,
-    gridHeight: 50,
+    gridWidth: DEFAULT_GRID_SIZE_METERS,
+    gridHeight: DEFAULT_GRID_SIZE_METERS,
     gridVisible: true,
     rotationDeg: DEFAULT_GRID_ROTATION,
     offsetX: 0,
@@ -61,8 +64,6 @@ export default function MapboxRotatePage({ onBack }) {
   });
   const mapboxAccessToken = normalizeMapboxToken(RAW_MAPBOX_ACCESS_TOKEN);
 
-  const [gridWidth, setGridWidth] = useState(50);
-  const [gridHeight, setGridHeight] = useState(50);
   const [gridVisible, setGridVisible] = useState(true);
   const [rotationDeg, setRotationDeg] = useState(DEFAULT_GRID_ROTATION);
   const [offsetX, setOffsetX] = useState(0);
@@ -76,12 +77,11 @@ export default function MapboxRotatePage({ onBack }) {
   const [statusMessage, setStatusMessage] = useState("Mapbox GL JS 로딩 중");
   const [errorMessage, setErrorMessage] = useState("");
   const [measureMode, setMeasureMode] = useState(MEASURE_MODES.none);
-  const [measureValue, setMeasureValue] = useState("-");
-  const [measureSecondaryValue, setMeasureSecondaryValue] = useState("-");
-  const [measureHint, setMeasureHint] = useState("측정 없음");
+  const [measureHint, setMeasureHint] = useState("");
   const [circleMeasures, setCircleMeasures] = useState([]);
   const [polygonMeasures, setPolygonMeasures] = useState([]);
-  const [distanceMeasures, setDistanceMeasures] = useState([]);
+  const [rectangleMeasures, setRectangleMeasures] = useState([]);
+  const [selectedShape, setSelectedShape] = useState(null);
 
   useEffect(() => {
     measureRef.current.mode = measureMode;
@@ -101,10 +101,10 @@ export default function MapboxRotatePage({ onBack }) {
   }, [polygonMeasures]);
 
   useEffect(() => {
-    distancesRef.current = distanceMeasures;
+    rectanglesRef.current = rectangleMeasures;
     syncMeasurementOverlay();
     syncMeasurementSummary();
-  }, [distanceMeasures]);
+  }, [rectangleMeasures]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -128,8 +128,8 @@ export default function MapboxRotatePage({ onBack }) {
 
   useEffect(() => {
     drawStateRef.current = {
-      gridWidth,
-      gridHeight,
+      gridWidth: DEFAULT_GRID_SIZE_METERS,
+      gridHeight: DEFAULT_GRID_SIZE_METERS,
       gridVisible,
       rotationDeg,
       offsetX,
@@ -137,7 +137,7 @@ export default function MapboxRotatePage({ onBack }) {
       origin,
     };
     scheduleGridDraw();
-  }, [gridWidth, gridHeight, gridVisible, rotationDeg, offsetX, offsetY, origin]);
+  }, [gridVisible, rotationDeg, offsetX, offsetY, origin]);
 
   useEffect(() => {
     let cancelled = false;
@@ -258,6 +258,10 @@ export default function MapboxRotatePage({ onBack }) {
     }
 
     const { mode, points, previewPoint } = measureRef.current;
+    const draftRectanglePoints =
+      mode === MEASURE_MODES.rectangle && points[0] && (previewPoint ?? points[1])
+        ? createScreenAlignedRectangle("draft-rectangle", points[0], previewPoint ?? points[1])?.points ?? null
+        : null;
     measurementSource.setData(
       buildMeasurementFeatures(
         mode,
@@ -265,7 +269,8 @@ export default function MapboxRotatePage({ onBack }) {
         previewPoint,
         circlesRef.current,
         polygonsRef.current,
-        distancesRef.current,
+        rectanglesRef.current,
+        draftRectanglePoints,
       ),
     );
   }
@@ -274,6 +279,93 @@ export default function MapboxRotatePage({ onBack }) {
     const nextId = `${prefix}-${measureIdRef.current}`;
     measureIdRef.current += 1;
     return nextId;
+  }
+
+  function snapPointToMeter(point) {
+    const { origin: snapOrigin, rotationDeg, offsetX, offsetY, gridWidth, gridHeight } = drawStateRef.current;
+    const localPoint = latLngToLocalMeters(point.lat, point.lng, snapOrigin);
+    const radians = (rotationDeg * Math.PI) / 180;
+    const gridPoint = worldToGridFrame(localPoint.x - offsetX, localPoint.y - offsetY, radians);
+    const snappedU = Math.round(gridPoint.u / Math.max(1, gridWidth)) * Math.max(1, gridWidth);
+    const snappedV = Math.round(gridPoint.v / Math.max(1, gridHeight)) * Math.max(1, gridHeight);
+    const snappedWorld = gridToWorldFrame(snappedU, snappedV, radians);
+    return localMetersToLatLng(
+      snappedWorld.x + offsetX,
+      snappedWorld.y + offsetY,
+      snapOrigin,
+    );
+  }
+
+  function formatCoordinate(point) {
+    return `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}`;
+  }
+
+  function getSelectedCoordinateRows() {
+    if (!selectedShape) {
+      return [];
+    }
+
+    if (selectedShape.type === "circle") {
+      const circle = circleMeasures.find((item) => item.id === selectedShape.id);
+      if (!circle) {
+        return [];
+      }
+
+      const rows = [{ label: "중심", value: formatCoordinate(circle.center) }];
+      if (circle.edgePoint) {
+        rows.push({ label: "경계", value: formatCoordinate(circle.edgePoint) });
+      }
+      return rows;
+    }
+
+    if (selectedShape.type === "polygon") {
+      const polygon = polygonMeasures.find((item) => item.id === selectedShape.id);
+      return polygon
+        ? polygon.points.map((point, index) => ({
+            label: `꼭짓점 ${index + 1}`,
+            value: formatCoordinate(point),
+          }))
+        : [];
+    }
+
+    if (selectedShape.type === "rectangle") {
+      const rectangle = rectangleMeasures.find((item) => item.id === selectedShape.id);
+      return rectangle
+        ? rectangle.points.map((point, index) => ({
+            label: `꼭짓점 ${index + 1}`,
+            value: formatCoordinate(point),
+          }))
+        : [];
+    }
+
+    return [];
+  }
+
+  function createScreenAlignedRectangle(id, start, end) {
+    const map = mapRef.current;
+    if (!map) {
+      return null;
+    }
+
+    const startPixel = map.project([start.lng, start.lat]);
+    const endPixel = map.project([end.lng, end.lat]);
+    const corners = [
+      startPixel,
+      { x: endPixel.x, y: startPixel.y },
+      endPixel,
+      { x: startPixel.x, y: endPixel.y },
+    ].map((point) => {
+      const lngLat = map.unproject([point.x, point.y]);
+      return {
+        lat: lngLat.lat,
+        lng: lngLat.lng,
+      };
+    });
+
+    return {
+      id,
+      points: corners,
+    };
   }
 
   function isNearFirstPoint(candidatePoint) {
@@ -289,40 +381,25 @@ export default function MapboxRotatePage({ onBack }) {
   }
 
   function syncMeasurementSummary() {
-    const { mode, points, previewPoint } = measureRef.current;
+    const { mode } = measureRef.current;
 
     if (mode === MEASURE_MODES.none) {
-      setMeasureValue("-");
-      setMeasureSecondaryValue(`원 ${circleMeasures.length}개 / 면적 ${polygonMeasures.length}개 / 거리 ${distanceMeasures.length}개`);
-      setMeasureHint("측정 없음");
+      setMeasureHint("");
       return;
     }
 
-    if (mode === MEASURE_MODES.distance) {
-      const startPoint = points[0];
-      const endPoint = previewPoint ?? points[1];
-      const distanceMeters = startPoint && endPoint ? haversineDistanceMeters(startPoint, endPoint) : 0;
-      setMeasureValue(formatMeters(distanceMeters));
-      setMeasureSecondaryValue(`거리 ${distanceMeasures.length}개`);
-      setMeasureHint("첫 클릭은 시작점, 두 번째 클릭은 종료점");
+    if (mode === MEASURE_MODES.rectangle) {
+      setMeasureHint("첫 클릭은 시작점, 두 번째 클릭은 대각선 반대편 점입니다.");
       return;
     }
 
-    if (mode === MEASURE_MODES.area) {
-      const activePoints = previewPoint ? [...points, previewPoint] : points;
-      setMeasureValue(formatSquareMeters(polygonAreaSquareMeters(activePoints)));
-      setMeasureSecondaryValue(`도형 ${polygonMeasures.length}개 / ${points.length} 포인트`);
-      setMeasureHint("점을 찍고 시작점을 다시 누르면 폴리곤 완성");
+    if (mode === MEASURE_MODES.polygon) {
+      setMeasureHint("점을 찍고 시작점을 다시 누르면 다각형이 완성됩니다.");
       return;
     }
 
-    if (mode === MEASURE_MODES.radius) {
-      const centerPoint = points[0];
-      const edgePoint = previewPoint ?? points[1];
-      const radiusMeters = centerPoint && edgePoint ? haversineDistanceMeters(centerPoint, edgePoint) : 0;
-      setMeasureValue(formatMeters(radiusMeters));
-      setMeasureSecondaryValue(`원 ${circleMeasures.length}개 / ${formatSquareMeters(Math.PI * radiusMeters * radiusMeters)}`);
-      setMeasureHint("첫 클릭은 중심, 두 번째 클릭은 반경 종료점");
+    if (mode === MEASURE_MODES.circle) {
+      setMeasureHint("첫 클릭은 중심, 두 번째 클릭은 원의 크기를 결정합니다.");
     }
   }
 
@@ -335,10 +412,11 @@ export default function MapboxRotatePage({ onBack }) {
     if (clearCompleted) {
       circlesRef.current = [];
       polygonsRef.current = [];
-      distancesRef.current = [];
+      rectanglesRef.current = [];
       setCircleMeasures([]);
       setPolygonMeasures([]);
-      setDistanceMeasures([]);
+      setRectangleMeasures([]);
+      setSelectedShape(null);
     }
     if (!keepMode) {
       setMeasureMode(MEASURE_MODES.none);
@@ -369,22 +447,27 @@ export default function MapboxRotatePage({ onBack }) {
       return;
     }
 
-    if (mode === MEASURE_MODES.area && points.length >= 3) {
+    if (mode === MEASURE_MODES.polygon && points.length >= 3) {
       const nextPolygon = { id: createMeasureId("polygon"), points: [...points] };
       const nextPolygons = [...polygonsRef.current, nextPolygon];
       polygonsRef.current = nextPolygons;
       setPolygonMeasures(nextPolygons);
+      setSelectedShape({ type: "polygon", id: nextPolygon.id });
       measureRef.current = { mode, points: [], previewPoint: null };
       syncMeasurementOverlay();
       syncMeasurementSummary();
       return;
     }
 
-    if (mode === MEASURE_MODES.distance && points.length >= 2) {
-      const nextDistance = { id: createMeasureId("distance"), start: points[0], end: points[1] };
-      const nextDistances = [...distancesRef.current, nextDistance];
-      distancesRef.current = nextDistances;
-      setDistanceMeasures(nextDistances);
+    if (mode === MEASURE_MODES.rectangle && points.length >= 2) {
+      const nextRectangle = createScreenAlignedRectangle(createMeasureId("rectangle"), points[0], points[1]);
+      if (!nextRectangle) {
+        return;
+      }
+      const nextRectangles = [...rectanglesRef.current, nextRectangle];
+      rectanglesRef.current = nextRectangles;
+      setRectangleMeasures(nextRectangles);
+      setSelectedShape({ type: "rectangle", id: nextRectangle.id });
       measureRef.current = { mode, points: [], previewPoint: null };
       syncMeasurementOverlay();
       syncMeasurementSummary();
@@ -406,35 +489,46 @@ export default function MapboxRotatePage({ onBack }) {
       return;
     }
 
-    const clickedPoint = { lat: event.lngLat.lat, lng: event.lngLat.lng };
+    const clickedPoint = snapPointToMeter({ lat: event.lngLat.lat, lng: event.lngLat.lng });
 
-    if (mode === MEASURE_MODES.radius) {
+    if (mode === MEASURE_MODES.circle) {
       if (points.length === 0) {
         measureRef.current = { mode, points: [clickedPoint], previewPoint: clickedPoint };
       } else {
         const radiusMeters = haversineDistanceMeters(points[0], clickedPoint);
-        const nextCircle = { id: createMeasureId("circle"), center: points[0], radiusMeters };
+        const nextCircle = {
+          id: createMeasureId("circle"),
+          center: points[0],
+          edgePoint: clickedPoint,
+          radiusMeters,
+        };
         const nextCircles = [...circlesRef.current, nextCircle];
         circlesRef.current = nextCircles;
         setCircleMeasures(nextCircles);
+        setSelectedShape({ type: "circle", id: nextCircle.id });
         measureRef.current = { mode, points: [], previewPoint: null };
       }
-    } else if (mode === MEASURE_MODES.distance) {
+    } else if (mode === MEASURE_MODES.rectangle) {
       if (points.length === 0) {
         measureRef.current = { mode, points: [clickedPoint], previewPoint: clickedPoint };
       } else {
-        const nextDistance = { id: createMeasureId("distance"), start: points[0], end: clickedPoint };
-        const nextDistances = [...distancesRef.current, nextDistance];
-        distancesRef.current = nextDistances;
-        setDistanceMeasures(nextDistances);
+        const nextRectangle = createScreenAlignedRectangle(createMeasureId("rectangle"), points[0], clickedPoint);
+        if (!nextRectangle) {
+          return;
+        }
+        const nextRectangles = [...rectanglesRef.current, nextRectangle];
+        rectanglesRef.current = nextRectangles;
+        setRectangleMeasures(nextRectangles);
+        setSelectedShape({ type: "rectangle", id: nextRectangle.id });
         measureRef.current = { mode, points: [], previewPoint: null };
       }
-    } else if (mode === MEASURE_MODES.area) {
+    } else if (mode === MEASURE_MODES.polygon) {
       if (points.length >= 3 && isNearFirstPoint(clickedPoint)) {
         const nextPolygon = { id: createMeasureId("polygon"), points: [...points] };
         const nextPolygons = [...polygonsRef.current, nextPolygon];
         polygonsRef.current = nextPolygons;
         setPolygonMeasures(nextPolygons);
+        setSelectedShape({ type: "polygon", id: nextPolygon.id });
         measureRef.current = { mode, points: [], previewPoint: null };
       } else {
         measureRef.current = { mode, points: [...points, clickedPoint], previewPoint: null };
@@ -456,7 +550,7 @@ export default function MapboxRotatePage({ onBack }) {
     measureRef.current = {
       mode,
       points,
-      previewPoint: { lat: event.lngLat.lat, lng: event.lngLat.lng },
+      previewPoint: snapPointToMeter({ lat: event.lngLat.lat, lng: event.lngLat.lng }),
     };
     syncMeasurementOverlay();
     syncMeasurementSummary();
@@ -470,7 +564,7 @@ export default function MapboxRotatePage({ onBack }) {
 
     event.preventDefault();
 
-    if ((mode === MEASURE_MODES.distance || mode === MEASURE_MODES.area) && points.length >= 2) {
+    if ((mode === MEASURE_MODES.rectangle || mode === MEASURE_MODES.polygon) && points.length >= 2) {
       measureRef.current = { mode, points, previewPoint: null };
       syncMeasurementOverlay();
       syncMeasurementSummary();
@@ -478,24 +572,30 @@ export default function MapboxRotatePage({ onBack }) {
   }
 
   function translateCircle(circle, dx, dy) {
+    const nextCenter = snapPointToMeter(offsetLatLng(circle.center, dx, dy));
+    const nextEdgePoint = circle.edgePoint
+      ? snapPointToMeter(offsetLatLng(circle.edgePoint, dx, dy))
+      : undefined;
     return {
       ...circle,
-      center: offsetLatLng(circle.center, dx, dy),
+      center: nextCenter,
+      edgePoint: nextEdgePoint,
+      radiusMeters:
+        nextCenter && nextEdgePoint ? haversineDistanceMeters(nextCenter, nextEdgePoint) : circle.radiusMeters,
     };
   }
 
   function translatePolygon(polygon, dx, dy) {
     return {
       ...polygon,
-      points: polygon.points.map((point) => offsetLatLng(point, dx, dy)),
+      points: polygon.points.map((point) => snapPointToMeter(offsetLatLng(point, dx, dy))),
     };
   }
 
-  function translateDistance(distance, dx, dy) {
+  function translateRectangle(rectangle, dx, dy) {
     return {
-      ...distance,
-      start: offsetLatLng(distance.start, dx, dy),
-      end: offsetLatLng(distance.end, dx, dy),
+      ...rectangle,
+      points: rectangle.points.map((point) => snapPointToMeter(offsetLatLng(point, dx, dy))),
     };
   }
 
@@ -511,6 +611,7 @@ export default function MapboxRotatePage({ onBack }) {
       lastPoint: { lat: event.lngLat.lat, lng: event.lngLat.lng },
       moved: false,
     };
+    setSelectedShape({ type: feature.properties.shapeType, id: feature.properties.measureId });
 
     mapRef.current?.dragPan.disable();
     const canvas = mapRef.current?.getCanvas();
@@ -547,12 +648,12 @@ export default function MapboxRotatePage({ onBack }) {
       return;
     }
 
-    if (dragState.shapeType === "distance") {
-      const nextDistances = distancesRef.current.map((distance) =>
-        distance.id === dragState.measureId ? translateDistance(distance, dx, dy) : distance,
+    if (dragState.shapeType === "rectangle") {
+      const nextRectangles = rectanglesRef.current.map((rectangle) =>
+        rectangle.id === dragState.measureId ? translateRectangle(rectangle, dx, dy) : rectangle,
       );
-      distancesRef.current = nextDistances;
-      setDistanceMeasures(nextDistances);
+      rectanglesRef.current = nextRectangles;
+      setRectangleMeasures(nextRectangles);
     }
   }
 
@@ -686,10 +787,6 @@ export default function MapboxRotatePage({ onBack }) {
     <div className="app-shell">
       <MapboxControlPanel
         onBack={onBack}
-        gridWidth={gridWidth}
-        setGridWidth={setGridWidth}
-        gridHeight={gridHeight}
-        setGridHeight={setGridHeight}
         gridVisible={gridVisible}
         setGridVisible={setGridVisible}
         rotationDeg={rotationDeg}
@@ -717,9 +814,8 @@ export default function MapboxRotatePage({ onBack }) {
         activateMeasureMode={activateMeasureMode}
         finishMeasurement={finishMeasurement}
         clearMeasurement={clearMeasurement}
-        measureValue={measureValue}
-        measureSecondaryValue={measureSecondaryValue}
         measureHint={measureHint}
+        selectedCoordinateRows={getSelectedCoordinateRows()}
       />
 
       <main ref={mapRootRef} className="map-root map-root--mapbox" aria-label="Mapbox 지도" />
