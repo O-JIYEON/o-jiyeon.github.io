@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import MapboxControlPanel from "../components/MapboxControlPanel";
 import MeasurePanel from "../components/MeasurePanel";
 import {
+  BLOCK_COLOR_PALETTE,
   DEFAULT_BEARING,
   DEFAULT_CENTER,
+  DEFAULT_BLOCK_COLOR,
   DEFAULT_GRID_OFFSET_Y,
   DEFAULT_GRID_ROTATION,
   DEFAULT_GRID_SIZE_METERS,
@@ -31,18 +33,29 @@ import {
 import {
   buildMeasurementFeatures,
   ensureMeasurementLayers,
+  formatMeters,
+  formatSquareMeters,
+  getCircleAreaSquareMeters,
+  getCircleDimensions,
   getDeltaMetersBetween,
   haversineDistanceMeters,
   MEASURE_MODES,
   offsetLatLng,
+  polygonAreaSquareMeters,
 } from "../features/mapbox/measurementUtils";
 
 export default function MapboxRotatePage({ onBack }) {
   const mapRootRef = useRef(null);
   const mapRef = useRef(null);
+  const mapboxGlRef = useRef(null);
   const markerRef = useRef(null);
+  const overlayNameMarkersRef = useRef([]);
   const rafRef = useRef(0);
   const measureIdRef = useRef(1);
+  const measureNameRef = useRef({
+    polygon: 1,
+    block: 1,
+  });
   const measureRef = useRef({
     mode: MEASURE_MODES.none,
     points: [],
@@ -53,6 +66,7 @@ export default function MapboxRotatePage({ onBack }) {
   const rectanglesRef = useRef([]);
   const dragStateRef = useRef(null);
   const dragSuppressUntilRef = useRef(0);
+  const draftBlockColorRef = useRef(DEFAULT_BLOCK_COLOR);
   const drawStateRef = useRef({
     gridWidth: DEFAULT_GRID_SIZE_METERS,
     gridHeight: DEFAULT_GRID_SIZE_METERS,
@@ -82,6 +96,9 @@ export default function MapboxRotatePage({ onBack }) {
   const [polygonMeasures, setPolygonMeasures] = useState([]);
   const [rectangleMeasures, setRectangleMeasures] = useState([]);
   const [selectedShape, setSelectedShape] = useState(null);
+  const [parcelVisible, setParcelVisible] = useState(true);
+  const [blockVisible, setBlockVisible] = useState(true);
+  const [draftBlockColor, setDraftBlockColor] = useState(DEFAULT_BLOCK_COLOR);
 
   useEffect(() => {
     measureRef.current.mode = measureMode;
@@ -91,20 +108,36 @@ export default function MapboxRotatePage({ onBack }) {
   useEffect(() => {
     circlesRef.current = circleMeasures;
     syncMeasurementOverlay();
+    syncOverlayNameMarkers();
     syncMeasurementSummary();
   }, [circleMeasures]);
 
   useEffect(() => {
     polygonsRef.current = polygonMeasures;
     syncMeasurementOverlay();
+    syncOverlayNameMarkers();
     syncMeasurementSummary();
   }, [polygonMeasures]);
 
   useEffect(() => {
     rectanglesRef.current = rectangleMeasures;
     syncMeasurementOverlay();
+    syncOverlayNameMarkers();
     syncMeasurementSummary();
   }, [rectangleMeasures]);
+
+  useEffect(() => {
+    syncMeasurementOverlay();
+  }, [selectedShape]);
+
+  useEffect(() => {
+    draftBlockColorRef.current = draftBlockColor;
+  }, [draftBlockColor]);
+
+  useEffect(() => {
+    syncMeasurementOverlay();
+    syncOverlayNameMarkers();
+  }, [parcelVisible, blockVisible]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -156,6 +189,7 @@ export default function MapboxRotatePage({ onBack }) {
         }
 
         mapboxgl.accessToken = mapboxAccessToken;
+        mapboxGlRef.current = mapboxgl;
 
         const map = new mapboxgl.Map({
           container: mapRootRef.current,
@@ -202,6 +236,7 @@ export default function MapboxRotatePage({ onBack }) {
           syncStatus();
           scheduleGridDraw();
           syncMeasurementOverlay();
+          syncOverlayNameMarkers();
         });
 
         map.on("styledata", () => {
@@ -212,6 +247,7 @@ export default function MapboxRotatePage({ onBack }) {
               ensureMeasurementLayers(map);
               scheduleGridDraw();
               syncMeasurementOverlay();
+              syncOverlayNameMarkers();
             }
           }
         });
@@ -238,8 +274,11 @@ export default function MapboxRotatePage({ onBack }) {
     return () => {
       cancelled = true;
       cancelAnimationFrame(rafRef.current);
+      overlayNameMarkersRef.current.forEach((marker) => marker.remove());
+      overlayNameMarkersRef.current = [];
       markerRef.current?.remove();
       markerRef.current = null;
+      mapboxGlRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;
     };
@@ -267,12 +306,67 @@ export default function MapboxRotatePage({ onBack }) {
         mode,
         points,
         previewPoint,
-        circlesRef.current,
-        polygonsRef.current,
-        rectanglesRef.current,
+        blockVisible ? circlesRef.current : [],
+        parcelVisible ? polygonsRef.current : [],
+        blockVisible ? rectanglesRef.current : [],
+        selectedShape,
         draftRectanglePoints,
       ),
     );
+  }
+
+  function syncOverlayNameMarkers() {
+    const map = mapRef.current;
+    const mapboxgl = mapboxGlRef.current;
+    if (!map || !mapboxgl) {
+      return;
+    }
+
+    overlayNameMarkersRef.current.forEach((marker) => marker.remove());
+    overlayNameMarkersRef.current = [];
+
+    const nextMarkers = [];
+
+    if (parcelVisible) {
+      polygonsRef.current.forEach((polygon) => {
+        const centerPoint = getPointsBoundsCenter(polygon.points);
+        if (!centerPoint || !polygon.name) {
+          return;
+        }
+
+        const element = document.createElement("div");
+        element.className = "overlay-name-marker overlay-name-marker--parcel";
+        element.textContent = polygon.name;
+        nextMarkers.push(new mapboxgl.Marker({ element, anchor: "center" }).setLngLat([centerPoint.lng, centerPoint.lat]).addTo(map));
+      });
+    }
+
+    if (blockVisible) {
+      circlesRef.current.forEach((circle) => {
+        if (!circle.center || !circle.name) {
+          return;
+        }
+
+        const element = document.createElement("div");
+        element.className = "overlay-name-marker overlay-name-marker--block";
+        element.textContent = circle.name;
+        nextMarkers.push(new mapboxgl.Marker({ element, anchor: "center" }).setLngLat([circle.center.lng, circle.center.lat]).addTo(map));
+      });
+
+      rectanglesRef.current.forEach((rectangle) => {
+        const centerPoint = getPointsBoundsCenter(rectangle.points);
+        if (!centerPoint || !rectangle.name) {
+          return;
+        }
+
+        const element = document.createElement("div");
+        element.className = "overlay-name-marker overlay-name-marker--block";
+        element.textContent = rectangle.name;
+        nextMarkers.push(new mapboxgl.Marker({ element, anchor: "center" }).setLngLat([centerPoint.lng, centerPoint.lat]).addTo(map));
+      });
+    }
+
+    overlayNameMarkersRef.current = nextMarkers;
   }
 
   function createMeasureId(prefix) {
@@ -281,13 +375,26 @@ export default function MapboxRotatePage({ onBack }) {
     return nextId;
   }
 
+  function createMeasureName(kind) {
+    const nextIndex = measureNameRef.current[kind];
+    measureNameRef.current[kind] += 1;
+
+    if (kind === "polygon") {
+      return `g${String(nextIndex).padStart(3, "0")}`;
+    }
+
+    return `blk${String(nextIndex).padStart(3, "0")}`;
+  }
+
   function snapPointToMeter(point) {
-    const { origin: snapOrigin, rotationDeg, offsetX, offsetY, gridWidth, gridHeight } = drawStateRef.current;
+    const { origin: snapOrigin, rotationDeg, offsetX, offsetY } = drawStateRef.current;
     const localPoint = latLngToLocalMeters(point.lat, point.lng, snapOrigin);
     const radians = (rotationDeg * Math.PI) / 180;
     const gridPoint = worldToGridFrame(localPoint.x - offsetX, localPoint.y - offsetY, radians);
-    const snappedU = Math.round(gridPoint.u / Math.max(1, gridWidth)) * Math.max(1, gridWidth);
-    const snappedV = Math.round(gridPoint.v / Math.max(1, gridHeight)) * Math.max(1, gridHeight);
+    const snappedU =
+      Math.round(gridPoint.u / Math.max(1, DRAWING_SNAP_METERS)) * Math.max(1, DRAWING_SNAP_METERS);
+    const snappedV =
+      Math.round(gridPoint.v / Math.max(1, DRAWING_SNAP_METERS)) * Math.max(1, DRAWING_SNAP_METERS);
     const snappedWorld = gridToWorldFrame(snappedU, snappedV, radians);
     return localMetersToLatLng(
       snappedWorld.x + offsetX,
@@ -297,7 +404,7 @@ export default function MapboxRotatePage({ onBack }) {
   }
 
   function getSnappedGridDelta(fromPoint, toPoint) {
-    const { origin: snapOrigin, rotationDeg, gridWidth, gridHeight } = drawStateRef.current;
+    const { origin: snapOrigin, rotationDeg } = drawStateRef.current;
     const radians = (rotationDeg * Math.PI) / 180;
     const fromLocal = latLngToLocalMeters(fromPoint.lat, fromPoint.lng, snapOrigin);
     const toLocal = latLngToLocalMeters(toPoint.lat, toPoint.lng, snapOrigin);
@@ -305,54 +412,213 @@ export default function MapboxRotatePage({ onBack }) {
     const toGrid = worldToGridFrame(toLocal.x, toLocal.y, radians);
     const deltaU = toGrid.u - fromGrid.u;
     const deltaV = toGrid.v - fromGrid.v;
-    const snappedU = Math.round(deltaU / Math.max(1, gridWidth)) * Math.max(1, gridWidth);
-    const snappedV = Math.round(deltaV / Math.max(1, gridHeight)) * Math.max(1, gridHeight);
+    const snappedU =
+      Math.round(deltaU / Math.max(1, DRAWING_SNAP_METERS)) * Math.max(1, DRAWING_SNAP_METERS);
+    const snappedV =
+      Math.round(deltaV / Math.max(1, DRAWING_SNAP_METERS)) * Math.max(1, DRAWING_SNAP_METERS);
     return gridToWorldFrame(snappedU, snappedV, radians);
   }
 
-  function formatCoordinate(point) {
-    return `${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}`;
-  }
-
-  function getSelectedCoordinateRows() {
-    if (!selectedShape) {
-      return [];
+  function getRectangleSize(rectangle) {
+    if (!rectangle || rectangle.points.length < 4) {
+      return { width: 0, height: 0 };
     }
 
-    if (selectedShape.type === "circle") {
-      const circle = circleMeasures.find((item) => item.id === selectedShape.id);
-      if (!circle) {
-        return [];
-      }
+    return {
+      width: haversineDistanceMeters(rectangle.points[0], rectangle.points[1]),
+      height: haversineDistanceMeters(rectangle.points[1], rectangle.points[2]),
+    };
+  }
 
-      const rows = [{ label: "중심", value: formatCoordinate(circle.center) }];
-      if (circle.edgePoint) {
-        rows.push({ label: "경계", value: formatCoordinate(circle.edgePoint) });
-      }
-      return rows;
+  function getPolygonSize(points) {
+    if (!points || points.length < 3) {
+      return { width: 0, height: 0 };
+    }
+
+    const originPoint = points[0];
+    const localPoints = points.map((point) => latLngToLocalMeters(point.lat, point.lng, originPoint));
+    const xs = localPoints.map((point) => point.x);
+    const ys = localPoints.map((point) => point.y);
+
+    return {
+      width: Math.max(...xs) - Math.min(...xs),
+      height: Math.max(...ys) - Math.min(...ys),
+    };
+  }
+
+  function scaleVector(vector, targetLength) {
+    const currentLength = Math.hypot(vector.x, vector.y);
+    if (currentLength < 0.000001) {
+      return { x: 0, y: 0 };
+    }
+    const scale = targetLength / currentLength;
+    return {
+      x: vector.x * scale,
+      y: vector.y * scale,
+    };
+  }
+
+  function getOverlayItems() {
+    const circleItems = circleMeasures.map((circle) => ({
+      id: circle.id,
+      type: "circle",
+      title: circle.name ?? circle.id,
+      color: circle.color ?? DEFAULT_BLOCK_COLOR,
+      diameter: Math.round(getCircleDimensions(circle).widthMeters),
+      area: Math.round(getCircleAreaSquareMeters(circle)),
+      description: `지름 ${formatMeters(getCircleDimensions(circle).widthMeters)}, 면적 ${formatSquareMeters(
+        getCircleAreaSquareMeters(circle),
+      )}`,
+    }));
+
+    const rectangleItems = rectangleMeasures.map((rectangle) => {
+      const size = getRectangleSize(rectangle);
+      return {
+        id: rectangle.id,
+        type: "rectangle",
+        title: rectangle.name ?? rectangle.id,
+        color: rectangle.color ?? DEFAULT_BLOCK_COLOR,
+        width: Math.round(size.width),
+        height: Math.round(size.height),
+        area: Math.round(polygonAreaSquareMeters(rectangle.points)),
+        description: `${formatMeters(size.width)} x ${formatMeters(size.height)}, 면적 ${formatSquareMeters(
+          polygonAreaSquareMeters(rectangle.points),
+        )}`,
+      };
+    });
+
+    const polygonItems = polygonMeasures.map((polygon) => {
+      const size = getPolygonSize(polygon.points);
+      return {
+        id: polygon.id,
+        type: "polygon",
+        title: polygon.name ?? polygon.id,
+        width: Math.round(size.width),
+        height: Math.round(size.height),
+        area: Math.round(polygonAreaSquareMeters(polygon.points)),
+        description: `${formatMeters(size.width)} x ${formatMeters(size.height)}, 면적 ${formatSquareMeters(
+          polygonAreaSquareMeters(polygon.points),
+        )}`,
+      };
+    });
+
+    return [...rectangleItems, ...circleItems, ...polygonItems];
+  }
+
+  function getParcelItems() {
+    return getOverlayItems().filter((item) => item.type === "polygon");
+  }
+
+  function getBlockItems() {
+    return getOverlayItems().filter((item) => item.type === "rectangle" || item.type === "circle");
+  }
+
+  function getSelectedOverlayLabel() {
+    if (!selectedShape) {
+      return "";
     }
 
     if (selectedShape.type === "polygon") {
-      const polygon = polygonMeasures.find((item) => item.id === selectedShape.id);
-      return polygon
-        ? polygon.points.map((point, index) => ({
-            label: `꼭짓점 ${index + 1}`,
-            value: formatCoordinate(point),
-          }))
-        : [];
+      return polygonMeasures.find((item) => item.id === selectedShape.id)?.name ?? "";
     }
 
     if (selectedShape.type === "rectangle") {
-      const rectangle = rectangleMeasures.find((item) => item.id === selectedShape.id);
-      return rectangle
-        ? rectangle.points.map((point, index) => ({
-            label: `꼭짓점 ${index + 1}`,
-            value: formatCoordinate(point),
-          }))
-        : [];
+      return rectangleMeasures.find((item) => item.id === selectedShape.id)?.name ?? "";
     }
 
-    return [];
+    if (selectedShape.type === "circle") {
+      return circleMeasures.find((item) => item.id === selectedShape.id)?.name ?? "";
+    }
+
+    return "";
+  }
+
+  function getPointsBoundsCenter(points) {
+    if (!points || points.length === 0) {
+      return null;
+    }
+
+    const lats = points.map((point) => point.lat);
+    const lngs = points.map((point) => point.lng);
+
+    return {
+      lat: (Math.min(...lats) + Math.max(...lats)) / 2,
+      lng: (Math.min(...lngs) + Math.max(...lngs)) / 2,
+    };
+  }
+
+  function getOverlayCenter(shape) {
+    if (!shape) {
+      return null;
+    }
+
+    if (shape.type === "circle") {
+      return circleMeasures.find((item) => item.id === shape.id)?.center ?? null;
+    }
+
+    if (shape.type === "rectangle") {
+      const rectangle = rectangleMeasures.find((item) => item.id === shape.id);
+      return rectangle ? getPointsBoundsCenter(rectangle.points) : null;
+    }
+
+    if (shape.type === "polygon") {
+      const polygon = polygonMeasures.find((item) => item.id === shape.id);
+      return polygon ? getPointsBoundsCenter(polygon.points) : null;
+    }
+
+    return null;
+  }
+
+  function focusOverlayIfOutsideView(shape) {
+    const map = mapRef.current;
+    if (!map || !shape) {
+      return;
+    }
+
+    const centerPoint = getOverlayCenter(shape);
+    if (!centerPoint) {
+      return;
+    }
+
+    const bounds = map.getBounds();
+    if (bounds.contains([centerPoint.lng, centerPoint.lat])) {
+      return;
+    }
+
+    map.easeTo({
+      center: [centerPoint.lng, centerPoint.lat],
+      duration: 700,
+    });
+  }
+
+  function handleSelectOverlay(nextShape) {
+    setSelectedShape(nextShape ? { type: nextShape.type, id: nextShape.id } : null);
+
+    if (nextShape?.focusFromList) {
+      focusOverlayIfOutsideView(nextShape);
+    }
+  }
+
+  function getOverlaySelectionAtPoint(event) {
+    const map = mapRef.current;
+    if (!map) {
+      return null;
+    }
+
+    const feature = map
+      .queryRenderedFeatures(event.point, {
+        layers: [MEASURE_FILL_LAYER_ID, MEASURE_LINE_LAYER_ID],
+      })
+      .find((item) => item.properties?.measureId && item.properties?.shapeType);
+
+    if (!feature) {
+      return null;
+    }
+
+    return {
+      type: feature.properties.shapeType,
+      id: feature.properties.measureId,
+    };
   }
 
   function createScreenAlignedRectangle(id, start, end) {
@@ -439,6 +705,173 @@ export default function MapboxRotatePage({ onBack }) {
     syncMeasurementSummary();
   }
 
+  function stopDrawingMode() {
+    measureRef.current = {
+      mode: MEASURE_MODES.none,
+      points: [],
+      previewPoint: null,
+    };
+    setMeasureMode(MEASURE_MODES.none);
+    syncMeasurementOverlay();
+    syncMeasurementSummary();
+  }
+
+  function deleteOverlay(type, id) {
+    if (type === "circle") {
+      const nextCircles = circleMeasures.filter((item) => item.id !== id);
+      circlesRef.current = nextCircles;
+      setCircleMeasures(nextCircles);
+    }
+
+    if (type === "rectangle") {
+      const nextRectangles = rectangleMeasures.filter((item) => item.id !== id);
+      rectanglesRef.current = nextRectangles;
+      setRectangleMeasures(nextRectangles);
+    }
+
+    if (type === "polygon") {
+      const nextPolygons = polygonMeasures.filter((item) => item.id !== id);
+      polygonsRef.current = nextPolygons;
+      setPolygonMeasures(nextPolygons);
+    }
+
+    if (selectedShape?.id === id && selectedShape?.type === type) {
+      setSelectedShape(null);
+    }
+  }
+
+  function updateRectangleDimensionById(id, axis, nextValue) {
+    const parsed = Math.round(Number(nextValue));
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return;
+    }
+
+    const nextRectangles = rectangleMeasures.map((rectangle) => {
+      if (rectangle.id !== id) {
+        return rectangle;
+      }
+
+      const originPoint = rectangle.points[0];
+      const p1 = rectangle.points[1];
+      const p3 = rectangle.points[3];
+      const localP1 = latLngToLocalMeters(p1.lat, p1.lng, originPoint);
+      const localP3 = latLngToLocalMeters(p3.lat, p3.lng, originPoint);
+      const widthVector = { x: localP1.x, y: localP1.y };
+      const heightVector = { x: localP3.x, y: localP3.y };
+      const nextWidthVector = scaleVector(widthVector, axis === "width" ? parsed : Math.hypot(widthVector.x, widthVector.y));
+      const nextHeightVector = scaleVector(heightVector, axis === "height" ? parsed : Math.hypot(heightVector.x, heightVector.y));
+
+      return {
+        ...rectangle,
+        points: [
+          originPoint,
+          localMetersToLatLng(nextWidthVector.x, nextWidthVector.y, originPoint),
+          localMetersToLatLng(nextWidthVector.x + nextHeightVector.x, nextWidthVector.y + nextHeightVector.y, originPoint),
+          localMetersToLatLng(nextHeightVector.x, nextHeightVector.y, originPoint),
+        ],
+      };
+    });
+
+    rectanglesRef.current = nextRectangles;
+    setRectangleMeasures(nextRectangles);
+  }
+
+  function updateCircleDimensionById(id, axis, nextValue) {
+    const parsed = Math.round(Number(nextValue));
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return;
+    }
+
+    const nextCircles = circleMeasures.map((circle) => {
+      if (circle.id !== id) {
+        return circle;
+      }
+
+      const current = getCircleDimensions(circle);
+      const nextWidth = axis === "width" ? parsed : current.widthMeters;
+      const nextHeight = axis === "height" ? parsed : current.heightMeters;
+
+      return {
+        ...circle,
+        widthMeters: nextWidth,
+        heightMeters: nextHeight,
+        radiusMeters: Math.max(nextWidth, nextHeight) / 2,
+      };
+    });
+
+    circlesRef.current = nextCircles;
+    setCircleMeasures(nextCircles);
+  }
+
+  function updateCircleDiameterById(id, nextValue) {
+    const parsed = Math.round(Number(nextValue));
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return;
+    }
+
+    const nextCircles = circleMeasures.map((circle) => {
+      if (circle.id !== id) {
+        return circle;
+      }
+
+      return {
+        ...circle,
+        widthMeters: parsed,
+        heightMeters: parsed,
+        radiusMeters: parsed / 2,
+      };
+    });
+
+    circlesRef.current = nextCircles;
+    setCircleMeasures(nextCircles);
+  }
+
+  function updateOverlayName(type, id, nextName) {
+    const trimmed = nextName.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    if (type === "polygon") {
+      const nextPolygons = polygonMeasures.map((polygon) => (polygon.id === id ? { ...polygon, name: trimmed } : polygon));
+      polygonsRef.current = nextPolygons;
+      setPolygonMeasures(nextPolygons);
+      return;
+    }
+
+    if (type === "rectangle") {
+      const nextRectangles = rectangleMeasures.map((rectangle) => (rectangle.id === id ? { ...rectangle, name: trimmed } : rectangle));
+      rectanglesRef.current = nextRectangles;
+      setRectangleMeasures(nextRectangles);
+      return;
+    }
+
+    if (type === "circle") {
+      const nextCircles = circleMeasures.map((circle) => (circle.id === id ? { ...circle, name: trimmed } : circle));
+      circlesRef.current = nextCircles;
+      setCircleMeasures(nextCircles);
+    }
+  }
+
+  function updateBlockColor(type, id, nextColor) {
+    if (!BLOCK_COLOR_PALETTE.includes(nextColor)) {
+      return;
+    }
+
+    if (type === "circle") {
+      const nextCircles = circleMeasures.map((circle) => (circle.id === id ? { ...circle, color: nextColor } : circle));
+      circlesRef.current = nextCircles;
+      setCircleMeasures(nextCircles);
+      return;
+    }
+
+    if (type === "rectangle") {
+      const nextRectangles = rectangleMeasures.map((rectangle) => (rectangle.id === id ? { ...rectangle, color: nextColor } : rectangle));
+      rectanglesRef.current = nextRectangles;
+      setRectangleMeasures(nextRectangles);
+    }
+  }
+
   function activateMeasureMode(nextMode) {
     if (nextMode === measureRef.current.mode) {
       clearMeasurement({ keepMode: false });
@@ -462,14 +895,12 @@ export default function MapboxRotatePage({ onBack }) {
     }
 
     if (mode === MEASURE_MODES.polygon && points.length >= 3) {
-      const nextPolygon = { id: createMeasureId("polygon"), points: [...points] };
+      const nextPolygon = { id: createMeasureId("polygon"), name: createMeasureName("polygon"), points: [...points] };
       const nextPolygons = [...polygonsRef.current, nextPolygon];
       polygonsRef.current = nextPolygons;
       setPolygonMeasures(nextPolygons);
       setSelectedShape({ type: "polygon", id: nextPolygon.id });
-      measureRef.current = { mode, points: [], previewPoint: null };
-      syncMeasurementOverlay();
-      syncMeasurementSummary();
+      stopDrawingMode();
       return;
     }
 
@@ -482,9 +913,7 @@ export default function MapboxRotatePage({ onBack }) {
       rectanglesRef.current = nextRectangles;
       setRectangleMeasures(nextRectangles);
       setSelectedShape({ type: "rectangle", id: nextRectangle.id });
-      measureRef.current = { mode, points: [], previewPoint: null };
-      syncMeasurementOverlay();
-      syncMeasurementSummary();
+      stopDrawingMode();
       return;
     }
 
@@ -500,6 +929,8 @@ export default function MapboxRotatePage({ onBack }) {
 
     const { mode, points } = measureRef.current;
     if (mode === MEASURE_MODES.none) {
+      const selection = getOverlaySelectionAtPoint(event);
+      setSelectedShape(selection);
       return;
     }
 
@@ -512,15 +943,20 @@ export default function MapboxRotatePage({ onBack }) {
         const radiusMeters = haversineDistanceMeters(points[0], clickedPoint);
         const nextCircle = {
           id: createMeasureId("circle"),
+          name: createMeasureName("block"),
+          color: draftBlockColorRef.current,
           center: points[0],
           edgePoint: clickedPoint,
           radiusMeters,
+          widthMeters: radiusMeters * 2,
+          heightMeters: radiusMeters * 2,
         };
         const nextCircles = [...circlesRef.current, nextCircle];
         circlesRef.current = nextCircles;
         setCircleMeasures(nextCircles);
         setSelectedShape({ type: "circle", id: nextCircle.id });
-        measureRef.current = { mode, points: [], previewPoint: null };
+        stopDrawingMode();
+        return;
       }
     } else if (mode === MEASURE_MODES.rectangle) {
       if (points.length === 0) {
@@ -530,20 +966,24 @@ export default function MapboxRotatePage({ onBack }) {
         if (!nextRectangle) {
           return;
         }
+        nextRectangle.name = createMeasureName("block");
+        nextRectangle.color = draftBlockColorRef.current;
         const nextRectangles = [...rectanglesRef.current, nextRectangle];
         rectanglesRef.current = nextRectangles;
         setRectangleMeasures(nextRectangles);
         setSelectedShape({ type: "rectangle", id: nextRectangle.id });
-        measureRef.current = { mode, points: [], previewPoint: null };
+        stopDrawingMode();
+        return;
       }
     } else if (mode === MEASURE_MODES.polygon) {
       if (points.length >= 3 && isNearFirstPoint(clickedPoint)) {
-        const nextPolygon = { id: createMeasureId("polygon"), points: [...points] };
+        const nextPolygon = { id: createMeasureId("polygon"), name: createMeasureName("polygon"), points: [...points] };
         const nextPolygons = [...polygonsRef.current, nextPolygon];
         polygonsRef.current = nextPolygons;
         setPolygonMeasures(nextPolygons);
         setSelectedShape({ type: "polygon", id: nextPolygon.id });
-        measureRef.current = { mode, points: [], previewPoint: null };
+        stopDrawingMode();
+        return;
       } else {
         measureRef.current = { mode, points: [...points, clickedPoint], previewPoint: null };
       }
@@ -592,8 +1032,7 @@ export default function MapboxRotatePage({ onBack }) {
       ...circle,
       center: nextCenter,
       edgePoint: nextEdgePoint,
-      radiusMeters:
-        nextCenter && nextEdgePoint ? haversineDistanceMeters(nextCenter, nextEdgePoint) : circle.radiusMeters,
+      radiusMeters: circle.radiusMeters,
     };
   }
 
@@ -842,10 +1281,24 @@ export default function MapboxRotatePage({ onBack }) {
       <MeasurePanel
         measureMode={measureMode}
         activateMeasureMode={activateMeasureMode}
-        finishMeasurement={finishMeasurement}
-        clearMeasurement={clearMeasurement}
         measureHint={measureHint}
-        selectedCoordinateRows={getSelectedCoordinateRows()}
+        parcelItems={getParcelItems()}
+        blockItems={getBlockItems()}
+        blockColorPalette={BLOCK_COLOR_PALETTE}
+        draftBlockColor={draftBlockColor}
+        parcelVisible={parcelVisible}
+        blockVisible={blockVisible}
+        selectedShape={selectedShape}
+        selectedOverlayLabel={getSelectedOverlayLabel()}
+        onToggleParcelVisible={() => setParcelVisible((current) => !current)}
+        onToggleBlockVisible={() => setBlockVisible((current) => !current)}
+        onSelectDraftBlockColor={setDraftBlockColor}
+        onSelectOverlay={handleSelectOverlay}
+        onDeleteOverlay={deleteOverlay}
+        onUpdateOverlayName={updateOverlayName}
+        onUpdateCircleDiameter={updateCircleDiameterById}
+        onUpdateRectangleDimension={updateRectangleDimensionById}
+        onUpdateBlockColor={updateBlockColor}
       />
 
       <main ref={mapRootRef} className="map-root map-root--mapbox" aria-label="Mapbox 지도" />

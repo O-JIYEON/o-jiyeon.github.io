@@ -4,7 +4,7 @@ export const DEFAULT_PITCH = 0;
 export const DEFAULT_GRID_ROTATION = -52;
 export const DEFAULT_GRID_OFFSET_Y = 12;
 export const DEFAULT_GRID_SIZE_METERS = 10;
-export const DRAWING_SNAP_METERS = 10;
+export const DRAWING_SNAP_METERS = 1;
 export const MAX_GRID_RENDER_LINES = 1000;
 export const RAW_MAPBOX_ACCESS_TOKEN = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
 export const MAPBOX_STYLE = "mapbox://styles/mapbox/satellite-streets-v12";
@@ -25,3 +25,6 @@ export const MEASURE_MODES = {
   polygon: "polygon",
   circle: "circle",
 };
+
+export const BLOCK_COLOR_PALETTE = ["#e11d48", "#ff7a18", "#f4b400", "#22c55e", "#3b82f6", "#8b5cf6", "#ec4899", "#94a3b8"];
+export const DEFAULT_BLOCK_COLOR = BLOCK_COLOR_PALETTE[0];

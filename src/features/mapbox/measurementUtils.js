@@ -54,10 +54,10 @@ export function formatMeters(value) {
   }
 
   if (value >= 1000) {
-    return `${(value / 1000).toFixed(2)} km`;
+    return `${Math.round(value / 1000)} km`;
   }
 
-  return `${value.toFixed(1)} m`;
+  return `${Math.round(value)} m`;
 }
 
 export function formatSquareMeters(value) {
@@ -66,22 +66,42 @@ export function formatSquareMeters(value) {
   }
 
   if (value >= 1000000) {
-    return `${(value / 1000000).toFixed(2)} km2`;
+    return `${Math.round(value / 1000000)} km2`;
   }
 
-  return `${value.toFixed(1)} m2`;
+  return `${Math.round(value)} m2`;
 }
 
-export function createCircleCoordinates(center, radiusMeters, steps = 64) {
-  if (!center || !Number.isFinite(radiusMeters) || radiusMeters <= 0) {
+export function getCircleDimensions(circle) {
+  const widthMeters = Number.isFinite(circle?.widthMeters) && circle.widthMeters > 0 ? circle.widthMeters : (circle?.radiusMeters ?? 0) * 2;
+  const heightMeters =
+    Number.isFinite(circle?.heightMeters) && circle.heightMeters > 0 ? circle.heightMeters : (circle?.radiusMeters ?? 0) * 2;
+
+  return {
+    widthMeters,
+    heightMeters,
+  };
+}
+
+export function getCircleAreaSquareMeters(circle) {
+  const { widthMeters, heightMeters } = getCircleDimensions(circle);
+  if (!Number.isFinite(widthMeters) || !Number.isFinite(heightMeters) || widthMeters <= 0 || heightMeters <= 0) {
+    return 0;
+  }
+
+  return Math.PI * (widthMeters / 2) * (heightMeters / 2);
+}
+
+export function createCircleCoordinates(center, widthMeters, heightMeters = widthMeters, steps = 64) {
+  if (!center || !Number.isFinite(widthMeters) || !Number.isFinite(heightMeters) || widthMeters <= 0 || heightMeters <= 0) {
     return [];
   }
 
   const coordinates = [];
   for (let index = 0; index <= steps; index += 1) {
     const angle = (index / steps) * Math.PI * 2;
-    const dx = Math.cos(angle) * radiusMeters;
-    const dy = Math.sin(angle) * radiusMeters;
+    const dx = Math.cos(angle) * (widthMeters / 2);
+    const dy = Math.sin(angle) * (heightMeters / 2);
     const point = localMetersToLatLng(dx, dy, center);
     coordinates.push([point.lng, point.lat]);
   }
@@ -174,12 +194,66 @@ export function buildMeasurementFeatures(
   circles,
   polygons,
   rectangles,
+  selectedShape = null,
   draftRectanglePoints = null,
 ) {
   const features = [];
+  const unselectedCircles = [];
+  const selectedCircles = [];
+  const unselectedRectangles = [];
+  const selectedRectangles = [];
+
+  polygons.forEach((polygon) => {
+    const isSelected = selectedShape?.type === "polygon" && selectedShape.id === polygon.id;
+    const closedCoordinates = [...polygon.points, polygon.points[0]].map((point) => [point.lng, point.lat]);
+    features.push({
+      type: "Feature",
+      geometry: {
+        type: "Polygon",
+        coordinates: [closedCoordinates],
+      },
+      properties: {
+        role: "area-fill",
+        draggable: false,
+        isSelected,
+        measureId: polygon.id,
+        shapeType: "polygon",
+        fillColor: "#ffd56a",
+        lineColor: "#ffd56a",
+        fillOpacity: 0.18,
+      },
+    });
+    features.push({
+      type: "Feature",
+      geometry: {
+        type: "LineString",
+        coordinates: closedCoordinates,
+      },
+      properties: {
+        role: "area-outline",
+        draggable: false,
+        isSelected,
+        measureId: polygon.id,
+        shapeType: "polygon",
+        lineColor: "#ffd56a",
+        lineOpacity: 1,
+      },
+    });
+    const centroid = getPolygonCentroid(polygon.points);
+    if (centroid) {
+      features.push(createLabelFeature(centroid, polygon.name ?? polygon.id, polygon.id, "polygon"));
+    }
+  });
 
   circles.forEach((circle) => {
-    const circleCoordinates = createCircleCoordinates(circle.center, circle.radiusMeters);
+    const isSelected = selectedShape?.type === "circle" && selectedShape.id === circle.id;
+    (isSelected ? selectedCircles : unselectedCircles).push(circle);
+  });
+
+  [...unselectedCircles, ...selectedCircles].forEach((circle) => {
+    const isSelected = selectedShape?.type === "circle" && selectedShape.id === circle.id;
+    const { widthMeters, heightMeters } = getCircleDimensions(circle);
+    const circleCoordinates = createCircleCoordinates(circle.center, widthMeters, heightMeters);
     if (circleCoordinates.length === 0) {
       return;
     }
@@ -193,8 +267,12 @@ export function buildMeasurementFeatures(
       properties: {
         role: "radius-fill",
         draggable: true,
+        isSelected,
         measureId: circle.id,
         shapeType: "circle",
+        fillColor: circle.color ?? "#e11d48",
+        lineColor: circle.color ?? "#e11d48",
+        fillOpacity: 1,
       },
     });
     features.push({
@@ -206,55 +284,23 @@ export function buildMeasurementFeatures(
       properties: {
         role: "radius-outline",
         draggable: true,
+        isSelected,
         measureId: circle.id,
         shapeType: "circle",
+        lineColor: circle.color ?? "#e11d48",
+        lineOpacity: isSelected ? 1 : 0,
       },
     });
-    features.push(
-      createLabelFeature(
-        circle.center,
-        formatSquareMeters(Math.PI * circle.radiusMeters * circle.radiusMeters),
-        circle.id,
-        "circle",
-      ),
-    );
-  });
-
-  polygons.forEach((polygon) => {
-    const closedCoordinates = [...polygon.points, polygon.points[0]].map((point) => [point.lng, point.lat]);
-    features.push({
-      type: "Feature",
-      geometry: {
-        type: "Polygon",
-        coordinates: [closedCoordinates],
-      },
-      properties: {
-        role: "area-fill",
-        draggable: true,
-        measureId: polygon.id,
-        shapeType: "polygon",
-      },
-    });
-    features.push({
-      type: "Feature",
-      geometry: {
-        type: "LineString",
-        coordinates: closedCoordinates,
-      },
-      properties: {
-        role: "area-outline",
-        draggable: true,
-        measureId: polygon.id,
-        shapeType: "polygon",
-      },
-    });
-    const centroid = getPolygonCentroid(polygon.points);
-    if (centroid) {
-      features.push(createLabelFeature(centroid, formatSquareMeters(polygonAreaSquareMeters(polygon.points)), polygon.id, "polygon"));
-    }
+    features.push(createLabelFeature(circle.center, circle.name ?? circle.id, circle.id, "circle"));
   });
 
   rectangles.forEach((rectangle) => {
+    const isSelected = selectedShape?.type === "rectangle" && selectedShape.id === rectangle.id;
+    (isSelected ? selectedRectangles : unselectedRectangles).push(rectangle);
+  });
+
+  [...unselectedRectangles, ...selectedRectangles].forEach((rectangle) => {
+    const isSelected = selectedShape?.type === "rectangle" && selectedShape.id === rectangle.id;
     const closedCoordinates = [...rectangle.points, rectangle.points[0]].map((point) => [point.lng, point.lat]);
     features.push({
       type: "Feature",
@@ -265,8 +311,12 @@ export function buildMeasurementFeatures(
       properties: {
         role: "rectangle-fill",
         draggable: true,
+        isSelected,
         measureId: rectangle.id,
         shapeType: "rectangle",
+        fillColor: rectangle.color ?? "#e11d48",
+        lineColor: rectangle.color ?? "#e11d48",
+        fillOpacity: 1,
       },
     });
     features.push(
@@ -279,8 +329,11 @@ export function buildMeasurementFeatures(
         properties: {
           role: "rectangle-outline",
           draggable: true,
+          isSelected,
           measureId: rectangle.id,
           shapeType: "rectangle",
+          lineColor: rectangle.color ?? "#e11d48",
+          lineOpacity: isSelected ? 1 : 0,
         },
       },
     );
@@ -289,7 +342,7 @@ export function buildMeasurementFeatures(
       features.push(
         createLabelFeature(
           centroid,
-          formatSquareMeters(polygonAreaSquareMeters(rectangle.points)),
+          rectangle.name ?? rectangle.id,
           rectangle.id,
           "rectangle",
         ),
@@ -382,7 +435,8 @@ export function buildMeasurementFeatures(
     const edgePoint = previewPoint ?? points[1];
     if (edgePoint) {
       const radiusMeters = haversineDistanceMeters(points[0], edgePoint);
-      const circleCoordinates = createCircleCoordinates(points[0], radiusMeters);
+      const diameterMeters = radiusMeters * 2;
+      const circleCoordinates = createCircleCoordinates(points[0], diameterMeters, diameterMeters);
 
       features.push({
         type: "Feature",
@@ -444,8 +498,14 @@ export function ensureMeasurementLayers(map) {
       source: MEASURE_SOURCE_ID,
       filter: ["==", ["geometry-type"], "Polygon"],
       paint: {
-        "fill-color": "#ffd56a",
-        "fill-opacity": 0.18,
+        "fill-antialias": false,
+        "fill-color": ["coalesce", ["get", "fillColor"], "#ffd56a"],
+        "fill-opacity": [
+          "case",
+          ["boolean", ["get", "isSelected"], false],
+          ["max", ["coalesce", ["get", "fillOpacity"], 0.18], 0.45],
+          ["coalesce", ["get", "fillOpacity"], 0.18],
+        ],
       },
     });
   }
@@ -457,8 +517,14 @@ export function ensureMeasurementLayers(map) {
       source: MEASURE_SOURCE_ID,
       filter: ["==", ["geometry-type"], "LineString"],
       paint: {
-        "line-color": "#ffd56a",
-        "line-width": 3,
+        "line-color": [
+          "case",
+          ["boolean", ["get", "isSelected"], false],
+          "#ffffff",
+          ["coalesce", ["get", "lineColor"], "#ffd56a"],
+        ],
+        "line-opacity": ["coalesce", ["get", "lineOpacity"], 1],
+        "line-width": ["case", ["boolean", ["get", "isSelected"], false], 4, 3],
       },
     });
   }
@@ -486,15 +552,16 @@ export function ensureMeasurementLayers(map) {
       filter: ["all", ["==", ["geometry-type"], "Point"], ["==", ["get", "role"], "label"]],
       layout: {
         "text-field": ["get", "label"],
-        "text-size": 12,
+        "text-size": 14,
         "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
         "text-anchor": "center",
         "text-allow-overlap": true,
+        "text-ignore-placement": true,
       },
       paint: {
         "text-color": "#fff4d0",
         "text-halo-color": "rgba(19, 32, 38, 0.92)",
-        "text-halo-width": 1.4,
+        "text-halo-width": 1.8,
       },
     });
   }
