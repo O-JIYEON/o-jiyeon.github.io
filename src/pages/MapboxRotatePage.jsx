@@ -52,6 +52,7 @@ export default function MapboxRotatePage({ onBack }) {
   const overlayNameMarkersRef = useRef([]);
   const blockImageMarkersRef = useRef([]);
   const blockRotateHandleRef = useRef(null);
+  const measurePanelRef = useRef(null);
   const rafRef = useRef(0);
   const measureIdRef = useRef(1);
   const measureNameRef = useRef({
@@ -734,8 +735,9 @@ export default function MapboxRotatePage({ onBack }) {
     return null;
   }
 
-  function focusOverlayIfOutsideView(shape) {
+  function focusOverlayInVisibleArea(shape, { force = false } = {}) {
     const map = mapRef.current;
+    const panelElement = measurePanelRef.current;
     if (!map || !shape) {
       return;
     }
@@ -745,13 +747,28 @@ export default function MapboxRotatePage({ onBack }) {
       return;
     }
 
-    const bounds = map.getBounds();
-    if (bounds.contains([centerPoint.lng, centerPoint.lat])) {
+    const projected = map.project([centerPoint.lng, centerPoint.lat]);
+    const canvas = map.getCanvas();
+    const panelWidth = panelElement?.offsetWidth ?? 0;
+    const padding = {
+      top: 24,
+      right: panelWidth > 0 ? panelWidth + 24 : 24,
+      bottom: 24,
+      left: 24,
+    };
+    const insideVisibleArea =
+      projected.x >= padding.left &&
+      projected.x <= canvas.clientWidth - padding.right &&
+      projected.y >= padding.top &&
+      projected.y <= canvas.clientHeight - padding.bottom;
+
+    if (!force && insideVisibleArea) {
       return;
     }
 
     map.easeTo({
       center: [centerPoint.lng, centerPoint.lat],
+      padding,
       duration: 700,
     });
   }
@@ -760,8 +777,17 @@ export default function MapboxRotatePage({ onBack }) {
     setSelectedShape(nextShape ? { type: nextShape.type, id: nextShape.id } : null);
 
     if (nextShape?.focusFromList) {
-      focusOverlayIfOutsideView(nextShape);
+      focusOverlayInVisibleArea(nextShape);
     }
+  }
+
+  function handleFocusOverlay(nextShape) {
+    if (!nextShape) {
+      return;
+    }
+
+    setSelectedShape({ type: nextShape.type, id: nextShape.id });
+    focusOverlayInVisibleArea(nextShape, { force: true });
   }
 
   function getOverlaySelectionAtPoint(event) {
@@ -1589,6 +1615,7 @@ export default function MapboxRotatePage({ onBack }) {
       />
 
       <MeasurePanel
+        panelRef={measurePanelRef}
         measureMode={measureMode}
         activateMeasureMode={activateMeasureMode}
         measureHint={measureHint}
@@ -1607,6 +1634,7 @@ export default function MapboxRotatePage({ onBack }) {
         onChangeDefaultBlockImage={updateDefaultBlockImage}
         onUpdateBlockImage={updateBlockImage}
         onSelectOverlay={handleSelectOverlay}
+        onFocusOverlay={handleFocusOverlay}
         onDeleteOverlay={deleteOverlay}
         onUpdateOverlayName={updateOverlayName}
         onUpdateCircleDiameter={updateCircleDiameterById}

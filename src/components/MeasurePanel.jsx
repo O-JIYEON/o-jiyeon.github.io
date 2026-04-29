@@ -85,6 +85,7 @@ function EditableName({ active, value, onActivate, onCommit }) {
 }
 
 export default function MeasurePanel({
+  panelRef,
   measureMode,
   activateMeasureMode,
   measureHint,
@@ -103,16 +104,93 @@ export default function MeasurePanel({
   onChangeDefaultBlockImage,
   onUpdateBlockImage,
   onSelectOverlay,
+  onFocusOverlay,
   onDeleteOverlay,
   onUpdateOverlayName,
   onUpdateCircleDiameter,
   onUpdateRectangleDimension,
   onUpdateBlockColor,
 }) {
+  const shellRef = useRef(null);
+  const scrollRef = useRef(null);
+  const colorAnchorRefs = useRef(new Map());
   const imageInputRef = useRef(null);
   const imagePickerTargetRef = useRef(null);
   const [editingField, setEditingField] = useState(null);
   const [openColorTarget, setOpenColorTarget] = useState(null);
+  const [colorPopupPosition, setColorPopupPosition] = useState({ left: 0, top: 0 });
+
+  useEffect(() => {
+    if (!openColorTarget) {
+      return undefined;
+    }
+
+    function handleDocumentMouseDown(event) {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      if (target.closest(".overlay-color-control") || target.closest(".overlay-color-palette--popup")) {
+        return;
+      }
+      setOpenColorTarget(null);
+    }
+
+    document.addEventListener("mousedown", handleDocumentMouseDown);
+    return () => {
+      document.removeEventListener("mousedown", handleDocumentMouseDown);
+    };
+  }, [openColorTarget]);
+
+  useEffect(() => {
+    if (!openColorTarget) {
+      return undefined;
+    }
+
+    function syncPopupPosition() {
+      const shellElement = shellRef.current;
+      const anchorElement = colorAnchorRefs.current.get(`${openColorTarget.type}:${openColorTarget.id}`);
+      if (!shellElement || !anchorElement) {
+        return;
+      }
+
+      const shellRect = shellElement.getBoundingClientRect();
+      const anchorRect = anchorElement.getBoundingClientRect();
+      setColorPopupPosition({
+        left: anchorRect.left - shellRect.left - 8,
+        top: anchorRect.top - shellRect.top + anchorRect.height / 2,
+      });
+    }
+
+    syncPopupPosition();
+    const scrollElement = scrollRef.current;
+    scrollElement?.addEventListener("scroll", syncPopupPosition);
+    window.addEventListener("resize", syncPopupPosition);
+    return () => {
+      scrollElement?.removeEventListener("scroll", syncPopupPosition);
+      window.removeEventListener("resize", syncPopupPosition);
+    };
+  }, [openColorTarget]);
+
+  function handleShellRef(node) {
+    shellRef.current = node;
+    if (typeof panelRef === "function") {
+      panelRef(node);
+      return;
+    }
+    if (panelRef && typeof panelRef === "object") {
+      panelRef.current = node;
+    }
+  }
+
+  function setColorAnchorRef(type, id, node) {
+    const key = `${type}:${id}`;
+    if (!node) {
+      colorAnchorRefs.current.delete(key);
+      return;
+    }
+    colorAnchorRefs.current.set(key, node);
+  }
 
   function isEditing(id, field) {
     return editingField?.id === id && editingField?.field === field;
@@ -159,6 +237,9 @@ export default function MeasurePanel({
 
   function openImagePicker(target, event) {
     event?.stopPropagation?.();
+    if (target?.kind === "item") {
+      onFocusOverlay?.({ type: "rectangle", id: target.id });
+    }
     imagePickerTargetRef.current = target;
     imageInputRef.current?.click();
   }
@@ -188,9 +269,10 @@ export default function MeasurePanel({
   }
 
   return (
-    <div className="measure-panel-shell">
+    <div ref={handleShellRef} className="measure-panel-shell">
       {selectedOverlayLabel ? <div className="measure-panel__selected-name">{selectedOverlayLabel}</div> : null}
 
+      <div ref={scrollRef} className="measure-panel-scroll">
       <aside className="measure-panel" aria-label="그리기 도구">
         <section className="builder-section builder-section--parcel">
           <div className="builder-section__header">
@@ -268,7 +350,7 @@ export default function MeasurePanel({
               className={measureMode === MEASURE_MODES.imageBlock ? "is-active" : ""}
               onClick={() => activateMeasureMode(MEASURE_MODES.imageBlock)}
             >
-              이미지 블록
+              이미지
             </button>
           </div>
           <div className="block-color-picker">
@@ -319,16 +401,18 @@ export default function MeasurePanel({
                     {item.type === "circle" ? (
                       <div className="overlay-meta">
                         <div className="overlay-color-control">
-                          {openColorTarget?.id === item.id && openColorTarget?.field === "color"
-                            ? renderColorPalette(item.color, (nextColor) => onUpdateBlockColor(item.type, item.id, nextColor), "overlay-color-palette--popup")
-                            : null}
                           <button
                             type="button"
                             className="overlay-color-current"
                             style={{ "--swatch-color": item.color }}
+                            ref={(node) => setColorAnchorRef(item.type, item.id, node)}
                             onClick={(event) => {
                               event.stopPropagation();
-                              setOpenColorTarget(openColorTarget?.id === item.id && openColorTarget?.field === "color" ? null : { id: item.id, field: "color" });
+                              setOpenColorTarget(
+                                openColorTarget?.id === item.id && openColorTarget?.field === "color"
+                                  ? null
+                                  : { id: item.id, type: item.type, field: "color" },
+                              );
                             }}
                           />
                         </div>
@@ -355,16 +439,18 @@ export default function MeasurePanel({
                           </button>
                         ) : (
                           <div className="overlay-color-control">
-                            {openColorTarget?.id === item.id && openColorTarget?.field === "color"
-                              ? renderColorPalette(item.color, (nextColor) => onUpdateBlockColor(item.type, item.id, nextColor), "overlay-color-palette--popup")
-                              : null}
                             <button
                               type="button"
                               className="overlay-color-current"
                               style={{ "--swatch-color": item.color }}
+                              ref={(node) => setColorAnchorRef(item.type, item.id, node)}
                               onClick={(event) => {
                                 event.stopPropagation();
-                                setOpenColorTarget(openColorTarget?.id === item.id && openColorTarget?.field === "color" ? null : { id: item.id, field: "color" });
+                                setOpenColorTarget(
+                                  openColorTarget?.id === item.id && openColorTarget?.field === "color"
+                                    ? null
+                                    : { id: item.id, type: item.type, field: "color" },
+                                );
                               }}
                             />
                           </div>
@@ -405,6 +491,31 @@ export default function MeasurePanel({
           </div>
         </section>
       </aside>
+      </div>
+      {openColorTarget?.field === "color" ? (
+        <div
+          className="overlay-color-palette overlay-color-palette--popup"
+          style={{ left: `${colorPopupPosition.left}px`, top: `${colorPopupPosition.top}px` }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {blockColorPalette.map((color) => (
+            <button
+              key={color}
+              type="button"
+              className={`overlay-color-chip ${
+                blockItems.find((item) => item.id === openColorTarget.id && item.type === openColorTarget.type)?.color === color
+                  ? "is-active"
+                  : ""
+              }`}
+              style={{ "--swatch-color": color }}
+              onClick={() => {
+                onUpdateBlockColor(openColorTarget.type, openColorTarget.id, color);
+                setOpenColorTarget(null);
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
