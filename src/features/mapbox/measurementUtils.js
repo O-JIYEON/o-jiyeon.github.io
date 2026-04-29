@@ -198,12 +198,29 @@ export function buildMeasurementFeatures(
   draftRectanglePoints = null,
 ) {
   const features = [];
+  const unselectedPolygons = [];
+  const selectedPolygons = [];
   const unselectedCircles = [];
   const selectedCircles = [];
   const unselectedRectangles = [];
   const selectedRectangles = [];
 
   polygons.forEach((polygon) => {
+    const isSelected = selectedShape?.type === "polygon" && selectedShape.id === polygon.id;
+    (isSelected ? selectedPolygons : unselectedPolygons).push(polygon);
+  });
+
+  circles.forEach((circle) => {
+    const isSelected = selectedShape?.type === "circle" && selectedShape.id === circle.id;
+    (isSelected ? selectedCircles : unselectedCircles).push(circle);
+  });
+
+  rectangles.forEach((rectangle) => {
+    const isSelected = selectedShape?.type === "rectangle" && selectedShape.id === rectangle.id;
+    (isSelected ? selectedRectangles : unselectedRectangles).push(rectangle);
+  });
+
+  function pushPolygonFeature(polygon) {
     const isSelected = selectedShape?.type === "polygon" && selectedShape.id === polygon.id;
     const closedCoordinates = [...polygon.points, polygon.points[0]].map((point) => [point.lng, point.lat]);
     features.push({
@@ -219,38 +236,42 @@ export function buildMeasurementFeatures(
         measureId: polygon.id,
         shapeType: "polygon",
         fillColor: "#ffd56a",
-        lineColor: "#ffd56a",
         fillOpacity: 0.18,
-      },
-    });
-    features.push({
-      type: "Feature",
-      geometry: {
-        type: "LineString",
-        coordinates: closedCoordinates,
-      },
-      properties: {
-        role: "area-outline",
-        draggable: false,
-        isSelected,
-        measureId: polygon.id,
-        shapeType: "polygon",
-        lineColor: "#ffd56a",
-        lineOpacity: 1,
       },
     });
     const centroid = getPolygonCentroid(polygon.points);
     if (centroid) {
       features.push(createLabelFeature(centroid, polygon.name ?? polygon.id, polygon.id, "polygon"));
     }
-  });
+  }
 
-  circles.forEach((circle) => {
-    const isSelected = selectedShape?.type === "circle" && selectedShape.id === circle.id;
-    (isSelected ? selectedCircles : unselectedCircles).push(circle);
-  });
+  function pushRectangleFeature(rectangle) {
+    const isSelected = selectedShape?.type === "rectangle" && selectedShape.id === rectangle.id;
+    const closedCoordinates = [...rectangle.points, rectangle.points[0]].map((point) => [point.lng, point.lat]);
+    features.push({
+      type: "Feature",
+      geometry: {
+        type: "Polygon",
+        coordinates: [closedCoordinates],
+      },
+      properties: {
+        role: "rectangle-fill",
+        draggable: true,
+        isSelected,
+        measureId: rectangle.id,
+        shapeType: "rectangle",
+        hasImageBlock: Boolean(rectangle.imageSrc),
+        fillColor: rectangle.color ?? "#e11d48",
+        fillOpacity: rectangle.imageSrc ? 0 : 1,
+      },
+    });
+    const centroid = getPolygonCentroid(rectangle.points);
+    if (centroid) {
+      features.push(createLabelFeature(centroid, rectangle.name ?? rectangle.id, rectangle.id, "rectangle"));
+    }
+  }
 
-  [...unselectedCircles, ...selectedCircles].forEach((circle) => {
+  function pushCircleFeature(circle) {
     const isSelected = selectedShape?.type === "circle" && selectedShape.id === circle.id;
     const { widthMeters, heightMeters } = getCircleDimensions(circle);
     const circleCoordinates = createCircleCoordinates(circle.center, widthMeters, heightMeters);
@@ -271,86 +292,18 @@ export function buildMeasurementFeatures(
         measureId: circle.id,
         shapeType: "circle",
         fillColor: circle.color ?? "#e11d48",
-        lineColor: circle.color ?? "#e11d48",
         fillOpacity: 1,
       },
     });
-    features.push({
-      type: "Feature",
-      geometry: {
-        type: "LineString",
-        coordinates: circleCoordinates,
-      },
-      properties: {
-        role: "radius-outline",
-        draggable: true,
-        isSelected,
-        measureId: circle.id,
-        shapeType: "circle",
-        lineColor: circle.color ?? "#e11d48",
-        lineOpacity: isSelected ? 1 : 0,
-      },
-    });
     features.push(createLabelFeature(circle.center, circle.name ?? circle.id, circle.id, "circle"));
-  });
+  }
 
-  rectangles.forEach((rectangle) => {
-    const isSelected = selectedShape?.type === "rectangle" && selectedShape.id === rectangle.id;
-    (isSelected ? selectedRectangles : unselectedRectangles).push(rectangle);
-  });
-
-  [...unselectedRectangles, ...selectedRectangles].forEach((rectangle) => {
-    const isSelected = selectedShape?.type === "rectangle" && selectedShape.id === rectangle.id;
-    const closedCoordinates = [...rectangle.points, rectangle.points[0]].map((point) => [point.lng, point.lat]);
-    features.push({
-      type: "Feature",
-      geometry: {
-        type: "Polygon",
-        coordinates: [closedCoordinates],
-      },
-      properties: {
-        role: "rectangle-fill",
-        draggable: true,
-        isSelected,
-        measureId: rectangle.id,
-        shapeType: "rectangle",
-        hasImageBlock: Boolean(rectangle.imageSrc),
-        fillColor: rectangle.color ?? "#e11d48",
-        lineColor: rectangle.imageSrc ? "#fff4d0" : rectangle.color ?? "#e11d48",
-        fillOpacity: rectangle.imageSrc ? 0 : 1,
-      },
-    });
-    features.push(
-      {
-        type: "Feature",
-        geometry: {
-          type: "LineString",
-          coordinates: closedCoordinates,
-        },
-        properties: {
-          role: "rectangle-outline",
-          draggable: true,
-          isSelected,
-          measureId: rectangle.id,
-          shapeType: "rectangle",
-          hasImageBlock: Boolean(rectangle.imageSrc),
-          lineColor: rectangle.imageSrc ? "#fff4d0" : rectangle.color ?? "#e11d48",
-          lineOpacity: rectangle.imageSrc ? 0 : isSelected ? 1 : 0,
-        },
-      },
-    );
-    const centroid = getPolygonCentroid(rectangle.points);
-    if (centroid) {
-      features.push(
-        createLabelFeature(
-          centroid,
-          rectangle.name ?? rectangle.id,
-          rectangle.id,
-          "rectangle",
-        ),
-      );
-    }
-  });
+  unselectedPolygons.forEach(pushPolygonFeature);
+  selectedPolygons.forEach(pushPolygonFeature);
+  unselectedRectangles.forEach(pushRectangleFeature);
+  unselectedCircles.forEach(pushCircleFeature);
+  selectedRectangles.forEach(pushRectangleFeature);
+  selectedCircles.forEach(pushCircleFeature);
 
   points.forEach((point, index) => {
     features.push({
@@ -390,16 +343,6 @@ export function buildMeasurementFeatures(
         },
         properties: {
           role: "rectangle-fill",
-        },
-      });
-      features.push({
-        type: "Feature",
-        geometry: {
-          type: "LineString",
-          coordinates: [...rectanglePoints, rectanglePoints[0]].map((point) => [point.lng, point.lat]),
-        },
-        properties: {
-          role: "rectangle-outline",
         },
       });
     }
@@ -568,6 +511,10 @@ export function ensureMeasurementLayers(map) {
         "text-halo-width": 1.8,
       },
     });
+  }
+
+  if (map.getLayer(MEASURE_LABEL_LAYER_ID)) {
+    map.moveLayer(MEASURE_LABEL_LAYER_ID);
   }
 }
 
