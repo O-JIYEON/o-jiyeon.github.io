@@ -22,6 +22,7 @@ export const MEASURE_LABEL_LAYER_ID = "echotech-measure-label-layer";
 export const MEASURE_MODES = {
   none: "none",
   rectangle: "rectangle",
+  imageBlock: "imageBlock",
   polygon: "polygon",
   circle: "circle",
 };

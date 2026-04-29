@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import MapboxControlPanel from "../components/MapboxControlPanel";
 import MeasurePanel from "../components/MeasurePanel";
+import defaultBlockPatternUrl from "../assets/block-default.png";
 import {
   BLOCK_COLOR_PALETTE,
   DEFAULT_BEARING,
-  DEFAULT_CENTER,
   DEFAULT_BLOCK_COLOR,
+  DEFAULT_CENTER,
   DEFAULT_GRID_OFFSET_Y,
   DEFAULT_GRID_ROTATION,
   DEFAULT_GRID_SIZE_METERS,
@@ -37,7 +38,6 @@ import {
   formatSquareMeters,
   getCircleAreaSquareMeters,
   getCircleDimensions,
-  getDeltaMetersBetween,
   haversineDistanceMeters,
   MEASURE_MODES,
   offsetLatLng,
@@ -50,6 +50,8 @@ export default function MapboxRotatePage({ onBack }) {
   const mapboxGlRef = useRef(null);
   const markerRef = useRef(null);
   const overlayNameMarkersRef = useRef([]);
+  const blockImageMarkersRef = useRef([]);
+  const blockRotateHandleRef = useRef(null);
   const rafRef = useRef(0);
   const measureIdRef = useRef(1);
   const measureNameRef = useRef({
@@ -65,8 +67,10 @@ export default function MapboxRotatePage({ onBack }) {
   const polygonsRef = useRef([]);
   const rectanglesRef = useRef([]);
   const dragStateRef = useRef(null);
+  const rotateStateRef = useRef(null);
   const dragSuppressUntilRef = useRef(0);
   const draftBlockColorRef = useRef(DEFAULT_BLOCK_COLOR);
+  const defaultBlockImageSrcRef = useRef(defaultBlockPatternUrl);
   const drawStateRef = useRef({
     gridWidth: DEFAULT_GRID_SIZE_METERS,
     gridHeight: DEFAULT_GRID_SIZE_METERS,
@@ -98,6 +102,7 @@ export default function MapboxRotatePage({ onBack }) {
   const [selectedShape, setSelectedShape] = useState(null);
   const [parcelVisible, setParcelVisible] = useState(true);
   const [blockVisible, setBlockVisible] = useState(true);
+  const [defaultBlockImageSrc, setDefaultBlockImageSrc] = useState(defaultBlockPatternUrl);
   const [draftBlockColor, setDraftBlockColor] = useState(DEFAULT_BLOCK_COLOR);
 
   useEffect(() => {
@@ -123,11 +128,15 @@ export default function MapboxRotatePage({ onBack }) {
     rectanglesRef.current = rectangleMeasures;
     syncMeasurementOverlay();
     syncOverlayNameMarkers();
+    syncBlockImageMarkers();
+    syncBlockRotateHandle();
     syncMeasurementSummary();
   }, [rectangleMeasures]);
 
   useEffect(() => {
     syncMeasurementOverlay();
+    syncBlockImageMarkers();
+    syncBlockRotateHandle();
   }, [selectedShape]);
 
   useEffect(() => {
@@ -135,8 +144,14 @@ export default function MapboxRotatePage({ onBack }) {
   }, [draftBlockColor]);
 
   useEffect(() => {
+    defaultBlockImageSrcRef.current = defaultBlockImageSrc;
+  }, [defaultBlockImageSrc]);
+
+  useEffect(() => {
     syncMeasurementOverlay();
     syncOverlayNameMarkers();
+    syncBlockImageMarkers();
+    syncBlockRotateHandle();
   }, [parcelVisible, blockVisible]);
 
   useEffect(() => {
@@ -237,6 +252,8 @@ export default function MapboxRotatePage({ onBack }) {
           scheduleGridDraw();
           syncMeasurementOverlay();
           syncOverlayNameMarkers();
+          syncBlockImageMarkers();
+          syncBlockRotateHandle();
         });
 
         map.on("styledata", () => {
@@ -248,6 +265,8 @@ export default function MapboxRotatePage({ onBack }) {
               scheduleGridDraw();
               syncMeasurementOverlay();
               syncOverlayNameMarkers();
+              syncBlockImageMarkers();
+              syncBlockRotateHandle();
             }
           }
         });
@@ -256,6 +275,12 @@ export default function MapboxRotatePage({ onBack }) {
         map.on("move", scheduleGridDraw);
         map.on("rotate", scheduleGridDraw);
         map.on("zoom", scheduleGridDraw);
+        map.on("move", syncBlockImageMarkers);
+        map.on("rotate", syncBlockImageMarkers);
+        map.on("zoom", syncBlockImageMarkers);
+        map.on("move", syncBlockRotateHandle);
+        map.on("rotate", syncBlockRotateHandle);
+        map.on("zoom", syncBlockRotateHandle);
         map.on("click", handleMeasureClick);
         map.on("mousemove", handleMeasureMouseMove);
         map.on("dblclick", handleMeasureDoubleClick);
@@ -276,6 +301,10 @@ export default function MapboxRotatePage({ onBack }) {
       cancelAnimationFrame(rafRef.current);
       overlayNameMarkersRef.current.forEach((marker) => marker.remove());
       overlayNameMarkersRef.current = [];
+      blockImageMarkersRef.current.forEach((marker) => marker.remove());
+      blockImageMarkersRef.current = [];
+      blockRotateHandleRef.current?.remove();
+      blockRotateHandleRef.current = null;
       markerRef.current?.remove();
       markerRef.current = null;
       mapboxGlRef.current = null;
@@ -298,7 +327,7 @@ export default function MapboxRotatePage({ onBack }) {
 
     const { mode, points, previewPoint } = measureRef.current;
     const draftRectanglePoints =
-      mode === MEASURE_MODES.rectangle && points[0] && (previewPoint ?? points[1])
+      (mode === MEASURE_MODES.rectangle || mode === MEASURE_MODES.imageBlock) && points[0] && (previewPoint ?? points[1])
         ? createScreenAlignedRectangle("draft-rectangle", points[0], previewPoint ?? points[1])?.points ?? null
         : null;
     measurementSource.setData(
@@ -354,7 +383,7 @@ export default function MapboxRotatePage({ onBack }) {
       });
 
       rectanglesRef.current.forEach((rectangle) => {
-        const centerPoint = getPointsBoundsCenter(rectangle.points);
+        const centerPoint = getAveragePoint(rectangle.points);
         if (!centerPoint || !rectangle.name) {
           return;
         }
@@ -367,6 +396,113 @@ export default function MapboxRotatePage({ onBack }) {
     }
 
     overlayNameMarkersRef.current = nextMarkers;
+  }
+
+  function syncBlockImageMarkers() {
+    const map = mapRef.current;
+    const mapboxgl = mapboxGlRef.current;
+    if (!map || !mapboxgl) {
+      return;
+    }
+
+    blockImageMarkersRef.current.forEach((marker) => marker.remove());
+    blockImageMarkersRef.current = [];
+
+    if (!blockVisible) {
+      return;
+    }
+
+    const nextMarkers = rectanglesRef.current
+      .filter((rectangle) => rectangle.imageSrc && rectangle.points?.length >= 4)
+      .map((rectangle) => {
+        const projected = rectangle.points.map((point) => map.project([point.lng, point.lat]));
+        const topLeft = projected[0];
+        const topRight = projected[1];
+        const bottomLeft = projected[3];
+        const width = Math.max(16, Math.hypot(topRight.x - topLeft.x, topRight.y - topLeft.y));
+        const height = Math.max(16, Math.hypot(bottomLeft.x - topLeft.x, bottomLeft.y - topLeft.y));
+        const rotation = Math.atan2(topRight.y - topLeft.y, topRight.x - topLeft.x);
+        const centerPoint = getAveragePoint(rectangle.points);
+
+        if (!centerPoint) {
+          return null;
+        }
+
+        const wrapper = document.createElement("div");
+        wrapper.className = `block-image-marker ${selectedShape?.type === "rectangle" && selectedShape.id === rectangle.id ? "is-selected" : ""}`;
+
+        const frame = document.createElement("div");
+        frame.className = "block-image-marker__frame";
+        frame.style.width = `${width}px`;
+        frame.style.height = `${height}px`;
+        frame.style.transform = `translate(-50%, -50%) rotate(${rotation}rad)`;
+
+        const image = document.createElement("img");
+        image.className = "block-image-marker__image";
+        image.src = rectangle.imageSrc;
+        image.alt = rectangle.name ?? "블록 이미지";
+        image.draggable = false;
+        frame.appendChild(image);
+        wrapper.appendChild(frame);
+
+        return new mapboxgl.Marker({ element: wrapper, anchor: "center" }).setLngLat([centerPoint.lng, centerPoint.lat]).addTo(map);
+      })
+      .filter(Boolean);
+
+    blockImageMarkersRef.current = nextMarkers;
+  }
+
+  function syncBlockRotateHandle() {
+    const map = mapRef.current;
+    const mapboxgl = mapboxGlRef.current;
+
+    blockRotateHandleRef.current?.remove();
+    blockRotateHandleRef.current = null;
+
+    if (!map || !mapboxgl || !blockVisible || selectedShape?.type !== "rectangle") {
+      return;
+    }
+
+    const rectangle = rectanglesRef.current.find((item) => item.id === selectedShape.id);
+    if (!rectangle || rectangle.points.length < 4) {
+      return;
+    }
+
+    const projected = rectangle.points.map((point) => map.project([point.lng, point.lat]));
+    const topLeft = projected[0];
+    const topRight = projected[1];
+    const centerProjected = {
+      x: (projected[0].x + projected[2].x) / 2,
+      y: (projected[0].y + projected[2].y) / 2,
+    };
+    const topMid = {
+      x: (topLeft.x + topRight.x) / 2,
+      y: (topLeft.y + topRight.y) / 2,
+    };
+    const direction = {
+      x: topMid.x - centerProjected.x,
+      y: topMid.y - centerProjected.y,
+    };
+    const length = Math.max(1, Math.hypot(direction.x, direction.y));
+    const handlePixel = {
+      x: topMid.x + (direction.x / length) * 28,
+      y: topMid.y + (direction.y / length) * 28,
+    };
+    const handleLngLat = map.unproject([handlePixel.x, handlePixel.y]);
+
+    const element = document.createElement("button");
+    element.type = "button";
+    element.className = "block-rotate-handle";
+    element.setAttribute("aria-label", "블록 회전");
+    element.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      startRectangleRotation(rectangle, { x: event.clientX, y: event.clientY });
+    });
+
+    blockRotateHandleRef.current = new mapboxgl.Marker({ element, anchor: "center" })
+      .setLngLat([handleLngLat.lng, handleLngLat.lat])
+      .addTo(map);
   }
 
   function createMeasureId(prefix) {
@@ -430,6 +566,15 @@ export default function MapboxRotatePage({ onBack }) {
     };
   }
 
+  function rotatePointAroundOrigin(localPoint, radians) {
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    return {
+      x: localPoint.x * cos - localPoint.y * sin,
+      y: localPoint.x * sin + localPoint.y * cos,
+    };
+  }
+
   function getPolygonSize(points) {
     if (!points || points.length < 3) {
       return { width: 0, height: 0 };
@@ -478,6 +623,7 @@ export default function MapboxRotatePage({ onBack }) {
         type: "rectangle",
         title: rectangle.name ?? rectangle.id,
         color: rectangle.color ?? DEFAULT_BLOCK_COLOR,
+        imageSrc: rectangle.imageSrc ?? "",
         width: Math.round(size.width),
         height: Math.round(size.height),
         area: Math.round(polygonAreaSquareMeters(rectangle.points)),
@@ -544,6 +690,25 @@ export default function MapboxRotatePage({ onBack }) {
     return {
       lat: (Math.min(...lats) + Math.max(...lats)) / 2,
       lng: (Math.min(...lngs) + Math.max(...lngs)) / 2,
+    };
+  }
+
+  function getAveragePoint(points) {
+    if (!points || points.length === 0) {
+      return null;
+    }
+
+    const sums = points.reduce(
+      (accumulator, point) => ({
+        lat: accumulator.lat + point.lat,
+        lng: accumulator.lng + point.lng,
+      }),
+      { lat: 0, lng: 0 },
+    );
+
+    return {
+      lat: sums.lat / points.length,
+      lng: sums.lng / points.length,
     };
   }
 
@@ -668,7 +833,7 @@ export default function MapboxRotatePage({ onBack }) {
       return;
     }
 
-    if (mode === MEASURE_MODES.rectangle) {
+    if (mode === MEASURE_MODES.rectangle || mode === MEASURE_MODES.imageBlock) {
       setMeasureHint("첫 클릭은 시작점, 두 번째 클릭은 대각선 반대편 점입니다.");
       return;
     }
@@ -776,6 +941,117 @@ export default function MapboxRotatePage({ onBack }) {
     setRectangleMeasures(nextRectangles);
   }
 
+  function rotateRectangleById(id, deltaDegrees) {
+    const radians = (deltaDegrees * Math.PI) / 180;
+    if (!Number.isFinite(radians) || Math.abs(radians) < 0.000001) {
+      return;
+    }
+
+    const nextRectangles = rectangleMeasures.map((rectangle) => {
+      if (rectangle.id !== id || rectangle.points.length < 4) {
+        return rectangle;
+      }
+
+      const centerPoint = getAveragePoint(rectangle.points);
+      if (!centerPoint) {
+        return rectangle;
+      }
+
+      const rotatedPoints = rectangle.points.map((point) => {
+        const localPoint = latLngToLocalMeters(point.lat, point.lng, centerPoint);
+        const rotated = rotatePointAroundOrigin(localPoint, radians);
+        return localMetersToLatLng(rotated.x, rotated.y, centerPoint);
+      });
+
+      return {
+        ...rectangle,
+        points: rotatedPoints,
+      };
+    });
+
+    rectanglesRef.current = nextRectangles;
+    setRectangleMeasures(nextRectangles);
+  }
+
+  function getClientPointAngle(clientPoint, centerProjected) {
+    const rect = mapRef.current?.getCanvasContainer().getBoundingClientRect();
+    if (!rect) {
+      return 0;
+    }
+
+    const pointInMap = {
+      x: clientPoint.x - rect.left,
+      y: clientPoint.y - rect.top,
+    };
+    return Math.atan2(pointInMap.y - centerProjected.y, pointInMap.x - centerProjected.x);
+  }
+
+  function startRectangleRotation(rectangle, clientPoint) {
+    const map = mapRef.current;
+    if (!map || rectangle.points.length < 4) {
+      return;
+    }
+
+    const centerPoint = getAveragePoint(rectangle.points);
+    if (!centerPoint) {
+      return;
+    }
+
+    const centerProjected = map.project([centerPoint.lng, centerPoint.lat]);
+    rotateStateRef.current = {
+      rectangleId: rectangle.id,
+      centerPoint,
+      centerProjected,
+      initialAngle: getClientPointAngle(clientPoint, centerProjected),
+      initialPoints: rectangle.points.map((point) => ({ ...point })),
+    };
+
+    map.dragPan.disable();
+    window.addEventListener("mousemove", handleRectangleRotateMove);
+    window.addEventListener("mouseup", handleRectangleRotateEnd);
+  }
+
+  function handleRectangleRotateMove(event) {
+    const rotateState = rotateStateRef.current;
+    if (!rotateState) {
+      return;
+    }
+
+    const nextAngle = getClientPointAngle({ x: event.clientX, y: event.clientY }, rotateState.centerProjected);
+    const deltaRadians = rotateState.initialAngle - nextAngle;
+
+    const nextRectangles = rectanglesRef.current.map((rectangle) => {
+      if (rectangle.id !== rotateState.rectangleId) {
+        return rectangle;
+      }
+
+      const rotatedPoints = rotateState.initialPoints.map((point) => {
+        const localPoint = latLngToLocalMeters(point.lat, point.lng, rotateState.centerPoint);
+        const rotatedPoint = rotatePointAroundOrigin(localPoint, deltaRadians);
+        return localMetersToLatLng(rotatedPoint.x, rotatedPoint.y, rotateState.centerPoint);
+      });
+
+      return {
+        ...rectangle,
+        points: rotatedPoints,
+      };
+    });
+
+    rectanglesRef.current = nextRectangles;
+    setRectangleMeasures(nextRectangles);
+  }
+
+  function handleRectangleRotateEnd() {
+    if (!rotateStateRef.current) {
+      return;
+    }
+
+    rotateStateRef.current = null;
+    window.removeEventListener("mousemove", handleRectangleRotateMove);
+    window.removeEventListener("mouseup", handleRectangleRotateEnd);
+    mapRef.current?.dragPan.enable();
+  }
+
   function updateCircleDimensionById(id, axis, nextValue) {
     const parsed = Math.round(Number(nextValue));
     if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -872,6 +1148,23 @@ export default function MapboxRotatePage({ onBack }) {
     }
   }
 
+  function updateBlockImage(id, nextImageSrc) {
+    if (!nextImageSrc) {
+      return;
+    }
+
+    const nextRectangles = rectangleMeasures.map((rectangle) =>
+      rectangle.id === id
+        ? {
+            ...rectangle,
+            imageSrc: nextImageSrc,
+          }
+        : rectangle,
+    );
+    rectanglesRef.current = nextRectangles;
+    setRectangleMeasures(nextRectangles);
+  }
+
   function activateMeasureMode(nextMode) {
     if (nextMode === measureRef.current.mode) {
       clearMeasurement({ keepMode: false });
@@ -904,10 +1197,15 @@ export default function MapboxRotatePage({ onBack }) {
       return;
     }
 
-    if (mode === MEASURE_MODES.rectangle && points.length >= 2) {
+    if ((mode === MEASURE_MODES.rectangle || mode === MEASURE_MODES.imageBlock) && points.length >= 2) {
       const nextRectangle = createScreenAlignedRectangle(createMeasureId("rectangle"), points[0], points[1]);
       if (!nextRectangle) {
         return;
+      }
+      nextRectangle.name = createMeasureName("block");
+      nextRectangle.color = draftBlockColorRef.current;
+      if (mode === MEASURE_MODES.imageBlock) {
+        nextRectangle.imageSrc = defaultBlockImageSrcRef.current;
       }
       const nextRectangles = [...rectanglesRef.current, nextRectangle];
       rectanglesRef.current = nextRectangles;
@@ -958,7 +1256,7 @@ export default function MapboxRotatePage({ onBack }) {
         stopDrawingMode();
         return;
       }
-    } else if (mode === MEASURE_MODES.rectangle) {
+    } else if (mode === MEASURE_MODES.rectangle || mode === MEASURE_MODES.imageBlock) {
       if (points.length === 0) {
         measureRef.current = { mode, points: [clickedPoint], previewPoint: clickedPoint };
       } else {
@@ -968,6 +1266,9 @@ export default function MapboxRotatePage({ onBack }) {
         }
         nextRectangle.name = createMeasureName("block");
         nextRectangle.color = draftBlockColorRef.current;
+        if (mode === MEASURE_MODES.imageBlock) {
+          nextRectangle.imageSrc = defaultBlockImageSrcRef.current;
+        }
         const nextRectangles = [...rectanglesRef.current, nextRectangle];
         rectanglesRef.current = nextRectangles;
         setRectangleMeasures(nextRectangles);
@@ -1018,7 +1319,7 @@ export default function MapboxRotatePage({ onBack }) {
 
     event.preventDefault();
 
-    if ((mode === MEASURE_MODES.rectangle || mode === MEASURE_MODES.polygon) && points.length >= 2) {
+    if ((mode === MEASURE_MODES.rectangle || mode === MEASURE_MODES.imageBlock || mode === MEASURE_MODES.polygon) && points.length >= 2) {
       measureRef.current = { mode, points, previewPoint: null };
       syncMeasurementOverlay();
       syncMeasurementSummary();
@@ -1252,6 +1553,15 @@ export default function MapboxRotatePage({ onBack }) {
     });
   }
 
+  function updateDefaultBlockImage(nextImageSrc) {
+    if (!nextImageSrc) {
+      return;
+    }
+
+    defaultBlockImageSrcRef.current = nextImageSrc;
+    setDefaultBlockImageSrc(nextImageSrc);
+  }
+
   return (
     <div className="app-shell">
       <MapboxControlPanel
@@ -1286,6 +1596,7 @@ export default function MapboxRotatePage({ onBack }) {
         blockItems={getBlockItems()}
         blockColorPalette={BLOCK_COLOR_PALETTE}
         draftBlockColor={draftBlockColor}
+        defaultBlockImageSrc={defaultBlockImageSrc}
         parcelVisible={parcelVisible}
         blockVisible={blockVisible}
         selectedShape={selectedShape}
@@ -1293,6 +1604,8 @@ export default function MapboxRotatePage({ onBack }) {
         onToggleParcelVisible={() => setParcelVisible((current) => !current)}
         onToggleBlockVisible={() => setBlockVisible((current) => !current)}
         onSelectDraftBlockColor={setDraftBlockColor}
+        onChangeDefaultBlockImage={updateDefaultBlockImage}
+        onUpdateBlockImage={updateBlockImage}
         onSelectOverlay={handleSelectOverlay}
         onDeleteOverlay={deleteOverlay}
         onUpdateOverlayName={updateOverlayName}

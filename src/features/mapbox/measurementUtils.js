@@ -314,9 +314,10 @@ export function buildMeasurementFeatures(
         isSelected,
         measureId: rectangle.id,
         shapeType: "rectangle",
+        hasImageBlock: Boolean(rectangle.imageSrc),
         fillColor: rectangle.color ?? "#e11d48",
-        lineColor: rectangle.color ?? "#e11d48",
-        fillOpacity: 1,
+        lineColor: rectangle.imageSrc ? "#fff4d0" : rectangle.color ?? "#e11d48",
+        fillOpacity: rectangle.imageSrc ? 0 : 1,
       },
     });
     features.push(
@@ -332,8 +333,9 @@ export function buildMeasurementFeatures(
           isSelected,
           measureId: rectangle.id,
           shapeType: "rectangle",
-          lineColor: rectangle.color ?? "#e11d48",
-          lineOpacity: isSelected ? 1 : 0,
+          hasImageBlock: Boolean(rectangle.imageSrc),
+          lineColor: rectangle.imageSrc ? "#fff4d0" : rectangle.color ?? "#e11d48",
+          lineOpacity: rectangle.imageSrc ? 0 : isSelected ? 1 : 0,
         },
       },
     );
@@ -377,7 +379,7 @@ export function buildMeasurementFeatures(
     });
   }
 
-  if (mode === MEASURE_MODES.rectangle && points[0]) {
+  if ((mode === MEASURE_MODES.rectangle || mode === MEASURE_MODES.imageBlock) && points[0]) {
     const rectanglePoints = draftRectanglePoints ?? (previewPoint ?? points[1] ? createRectanglePoints(points[0], previewPoint ?? points[1]) : null);
     if (rectanglePoints) {
       features.push({
@@ -502,6 +504,8 @@ export function ensureMeasurementLayers(map) {
         "fill-color": ["coalesce", ["get", "fillColor"], "#ffd56a"],
         "fill-opacity": [
           "case",
+          ["boolean", ["get", "hasImageBlock"], false],
+          0,
           ["boolean", ["get", "isSelected"], false],
           ["max", ["coalesce", ["get", "fillOpacity"], 0.18], 0.45],
           ["coalesce", ["get", "fillOpacity"], 0.18],
@@ -573,6 +577,9 @@ export function getMeasureModeLabel(mode) {
   }
   if (mode === MEASURE_MODES.polygon) {
     return "다각형";
+  }
+  if (mode === MEASURE_MODES.imageBlock) {
+    return "이미지 블록";
   }
   if (mode === MEASURE_MODES.rectangle) {
     return "사각형";

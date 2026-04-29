@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getMeasureModeLabel, MEASURE_MODES } from "../features/mapbox/measurementUtils";
 
 function EditableToken({ active, value, suffix = "", onActivate, onChange, onCommit, className = "" }) {
@@ -92,6 +92,7 @@ export default function MeasurePanel({
   blockItems,
   blockColorPalette,
   draftBlockColor,
+  defaultBlockImageSrc,
   parcelVisible,
   blockVisible,
   selectedShape,
@@ -99,6 +100,8 @@ export default function MeasurePanel({
   onToggleParcelVisible,
   onToggleBlockVisible,
   onSelectDraftBlockColor,
+  onChangeDefaultBlockImage,
+  onUpdateBlockImage,
   onSelectOverlay,
   onDeleteOverlay,
   onUpdateOverlayName,
@@ -106,6 +109,8 @@ export default function MeasurePanel({
   onUpdateRectangleDimension,
   onUpdateBlockColor,
 }) {
+  const imageInputRef = useRef(null);
+  const imagePickerTargetRef = useRef(null);
   const [editingField, setEditingField] = useState(null);
   const [openColorTarget, setOpenColorTarget] = useState(null);
 
@@ -123,13 +128,13 @@ export default function MeasurePanel({
     setEditingField(null);
   }
 
-  function commitCircleDiameter(item, nextValue) {
-    onUpdateCircleDiameter(item.id, nextValue);
+  function commitRectangleDimension(item, axis, nextValue) {
+    onUpdateRectangleDimension(item.id, axis, nextValue);
     setEditingField(null);
   }
 
-  function commitRectangleDimension(item, axis, nextValue) {
-    onUpdateRectangleDimension(item.id, axis, nextValue);
+  function commitCircleDiameter(item, nextValue) {
+    onUpdateCircleDiameter(item.id, nextValue);
     setEditingField(null);
   }
 
@@ -150,6 +155,36 @@ export default function MeasurePanel({
         ))}
       </div>
     );
+  }
+
+  function openImagePicker(target, event) {
+    event?.stopPropagation?.();
+    imagePickerTargetRef.current = target;
+    imageInputRef.current?.click();
+  }
+
+  function handleImageChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const target = imagePickerTargetRef.current;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        if (target?.kind === "default") {
+          onChangeDefaultBlockImage?.(reader.result);
+        }
+        if (target?.kind === "item") {
+          onUpdateBlockImage?.(target.id, reader.result);
+        }
+      }
+      imagePickerTargetRef.current = null;
+    };
+    reader.readAsDataURL(file);
+    event.target.value = "";
   }
 
   return (
@@ -228,13 +263,45 @@ export default function MeasurePanel({
             >
               사각형
             </button>
+            <button
+              type="button"
+              className={measureMode === MEASURE_MODES.imageBlock ? "is-active" : ""}
+              onClick={() => activateMeasureMode(MEASURE_MODES.imageBlock)}
+            >
+              이미지 블록
+            </button>
           </div>
           <div className="block-color-picker">
             <span>색상</span>
             {renderColorPalette(draftBlockColor, onSelectDraftBlockColor, "overlay-color-palette--static")}
           </div>
-          {measureMode === MEASURE_MODES.circle || measureMode === MEASURE_MODES.rectangle ? (
-            <p className="mapbox-status">{`${getMeasureModeLabel(measureMode)} 생성 중: ${measureHint}`}</p>
+          {defaultBlockImageSrc ? (
+            <div className="block-default-image">
+              <span>기본 이미지</span>
+              <button
+                type="button"
+                className="block-default-image__button"
+                onClick={(event) => openImagePicker({ kind: "default" }, event)}
+                style={{ "--block-image-bg": draftBlockColor }}
+              >
+                <img src={defaultBlockImageSrc} alt="블록 기본 이미지" className="block-default-image__preview" />
+              </button>
+              <span className="block-default-image__hint">새 이미지 블록 생성 시 사용</span>
+            </div>
+          ) : null}
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            className="sr-only-input"
+            onChange={handleImageChange}
+          />
+          {measureMode === MEASURE_MODES.circle || measureMode === MEASURE_MODES.rectangle || measureMode === MEASURE_MODES.imageBlock ? (
+            <p className="mapbox-status">
+              {measureMode === MEASURE_MODES.imageBlock
+                ? `이미지 블록 생성 중: ${measureHint}`
+                : `${getMeasureModeLabel(measureMode)} 생성 중: ${measureHint}`}
+            </p>
           ) : null}
           <div className="overlay-list">
             {blockItems.length === 0 ? (
@@ -278,20 +345,30 @@ export default function MeasurePanel({
                       </div>
                     ) : (
                       <div className="overlay-meta">
-                        <div className="overlay-color-control">
-                          {openColorTarget?.id === item.id && openColorTarget?.field === "color"
-                            ? renderColorPalette(item.color, (nextColor) => onUpdateBlockColor(item.type, item.id, nextColor), "overlay-color-palette--popup")
-                            : null}
+                        {item.imageSrc ? (
                           <button
                             type="button"
-                            className="overlay-color-current"
-                            style={{ "--swatch-color": item.color }}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setOpenColorTarget(openColorTarget?.id === item.id && openColorTarget?.field === "color" ? null : { id: item.id, field: "color" });
-                            }}
-                          />
-                        </div>
+                            className="overlay-block-thumbnail-button"
+                            onClick={(event) => openImagePicker({ kind: "item", id: item.id }, event)}
+                          >
+                            <img src={item.imageSrc} alt="" className="overlay-block-thumbnail" aria-hidden="true" />
+                          </button>
+                        ) : (
+                          <div className="overlay-color-control">
+                            {openColorTarget?.id === item.id && openColorTarget?.field === "color"
+                              ? renderColorPalette(item.color, (nextColor) => onUpdateBlockColor(item.type, item.id, nextColor), "overlay-color-palette--popup")
+                              : null}
+                            <button
+                              type="button"
+                              className="overlay-color-current"
+                              style={{ "--swatch-color": item.color }}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setOpenColorTarget(openColorTarget?.id === item.id && openColorTarget?.field === "color" ? null : { id: item.id, field: "color" });
+                              }}
+                            />
+                          </div>
+                        )}
                         <EditableToken
                           active={isEditing(item.id, "width")}
                           value={item.width}
