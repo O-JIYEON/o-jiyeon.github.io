@@ -258,36 +258,24 @@ export default function MapboxRotatePage({ onBack }) {
           setPitch(DEFAULT_PITCH);
         };
 
-        map.on("load", () => {
+        const handleStyleLoad = () => {
           if (cancelled) {
             return;
           }
           applyKoreanLabels(map);
           ensureGridLayer(map);
           ensureMeasurementLayers(map);
-          setStatusMessage("지도 회전은 가능하고, 틸트는 0deg로 고정됩니다.");
           syncStatus();
           scheduleGridDraw();
           syncMeasurementOverlay();
           syncOverlayNameMarkers();
           syncBlockImageMarkers();
           syncBlockRotateHandle();
-        });
+          setStatusMessage("지도 회전은 가능하고, 틸트는 0deg로 고정됩니다.");
+        };
 
-        map.on("styledata", () => {
-          if (!cancelled) {
-            applyKoreanLabels(map);
-            if (map.isStyleLoaded()) {
-              ensureGridLayer(map);
-              ensureMeasurementLayers(map);
-              scheduleGridDraw();
-              syncMeasurementOverlay();
-              syncOverlayNameMarkers();
-              syncBlockImageMarkers();
-              syncBlockRotateHandle();
-            }
-          }
-        });
+        map.on("load", handleStyleLoad);
+        map.on("style.load", handleStyleLoad);
         map.on("move", syncStatus);
         map.on("rotate", syncStatus);
         map.on("move", scheduleGridDraw);
