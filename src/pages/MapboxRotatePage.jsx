@@ -9,11 +9,12 @@ import {
   DEFAULT_CENTER,
   DEFAULT_GRID_OFFSET_Y,
   DEFAULT_GRID_ROTATION,
+  DEFAULT_MAPBOX_STYLE,
   DEFAULT_GRID_SIZE_METERS,
   DEFAULT_PITCH,
   DRAWING_SNAP_METERS,
   GRID_SOURCE_ID,
-  MAPBOX_STYLE,
+  MAPBOX_STYLES,
   MEASURE_FILL_LAYER_ID,
   MEASURE_LINE_LAYER_ID,
   RAW_MAPBOX_ACCESS_TOKEN,
@@ -84,6 +85,7 @@ export default function MapboxRotatePage({ onBack }) {
   const mapboxAccessToken = normalizeMapboxToken(RAW_MAPBOX_ACCESS_TOKEN);
 
   const [gridVisible, setGridVisible] = useState(true);
+  const [mapStyle, setMapStyle] = useState(DEFAULT_MAPBOX_STYLE);
   const [rotationDeg, setRotationDeg] = useState(DEFAULT_GRID_ROTATION);
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(DEFAULT_GRID_OFFSET_Y);
@@ -105,6 +107,10 @@ export default function MapboxRotatePage({ onBack }) {
   const [blockVisible, setBlockVisible] = useState(true);
   const [defaultBlockImageSrc, setDefaultBlockImageSrc] = useState(defaultBlockPatternUrl);
   const [draftBlockColor, setDraftBlockColor] = useState(DEFAULT_BLOCK_COLOR);
+  const mapStyleOptions = Object.entries(MAPBOX_STYLES).map(([value, option]) => ({
+    value,
+    label: option.label,
+  }));
 
   useEffect(() => {
     measureRef.current.mode = measureMode;
@@ -189,6 +195,17 @@ export default function MapboxRotatePage({ onBack }) {
   }, [gridVisible, rotationDeg, offsetX, offsetY, origin]);
 
   useEffect(() => {
+    const map = mapRef.current;
+    const styleUrl = MAPBOX_STYLES[mapStyle]?.url;
+    if (!map || !styleUrl) {
+      return;
+    }
+
+    setStatusMessage(`지도 타입 변경 중: ${MAPBOX_STYLES[mapStyle].label}`);
+    map.setStyle(styleUrl);
+  }, [mapStyle]);
+
+  useEffect(() => {
     let cancelled = false;
 
     if (!mapboxAccessToken) {
@@ -209,7 +226,7 @@ export default function MapboxRotatePage({ onBack }) {
 
         const map = new mapboxgl.Map({
           container: mapRootRef.current,
-          style: MAPBOX_STYLE,
+          style: MAPBOX_STYLES[DEFAULT_MAPBOX_STYLE].url,
           center: DEFAULT_CENTER,
           zoom: 15.2,
           bearing: DEFAULT_BEARING,
@@ -1592,6 +1609,9 @@ export default function MapboxRotatePage({ onBack }) {
     <div className="app-shell">
       <MapboxControlPanel
         onBack={onBack}
+        mapStyle={mapStyle}
+        setMapStyle={setMapStyle}
+        mapStyleOptions={mapStyleOptions}
         gridVisible={gridVisible}
         setGridVisible={setGridVisible}
         rotationDeg={rotationDeg}

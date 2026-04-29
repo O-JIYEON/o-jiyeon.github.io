@@ -7,7 +7,25 @@ export const DEFAULT_GRID_SIZE_METERS = 10;
 export const DRAWING_SNAP_METERS = 1;
 export const MAX_GRID_RENDER_LINES = 1000;
 export const RAW_MAPBOX_ACCESS_TOKEN = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
-export const MAPBOX_STYLE = "mapbox://styles/mapbox/satellite-streets-v12";
+export const DEFAULT_MAPBOX_STYLE = "satellite-streets";
+export const MAPBOX_STYLES = {
+  streets: {
+    label: "Streets",
+    url: "mapbox://styles/mapbox/streets-v12",
+  },
+  outdoors: {
+    label: "Outdoors",
+    url: "mapbox://styles/mapbox/outdoors-v12",
+  },
+  satellite: {
+    label: "Satellite",
+    url: "mapbox://styles/mapbox/satellite-v9",
+  },
+  "satellite-streets": {
+    label: "Satellite Streets",
+    url: "mapbox://styles/mapbox/satellite-streets-v12",
+  },
+};
 export const MAPBOX_GL_CSS_ID = "mapbox-gl-css";
 export const MAPBOX_GL_SCRIPT_ID = "mapbox-gl-script";
 export const KOREAN_LABEL_FIELD = ["coalesce", ["get", "name_ko"], ["get", "name"]];

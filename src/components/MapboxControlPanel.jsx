@@ -1,5 +1,8 @@
 export default function MapboxControlPanel({
   onBack,
+  mapStyle,
+  setMapStyle,
+  mapStyleOptions,
   gridVisible,
   setGridVisible,
   rotationDeg,
@@ -30,6 +33,17 @@ export default function MapboxControlPanel({
       <p className="eyebrow">MAPBOX VIEW</p>
       <h1>Rotate Map</h1>
       <section className="dev-panel-block">
+        <label className="field">
+          <span>지도 타입</span>
+          <select value={mapStyle} onChange={(event) => setMapStyle(event.target.value)}>
+            {mapStyleOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <label className="toggle-row">
           <span>격자 표시</span>
           <input type="checkbox" checked={gridVisible} onChange={(event) => setGridVisible(event.target.checked)} />
