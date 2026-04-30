@@ -1,16 +1,22 @@
 import { useEffect, useState } from "react";
+import GpsTestPage from "./pages/GpsTestPage";
 import MapboxRotatePage from "./pages/MapboxRotatePage";
 import NaverGridPage from "./pages/NaverGridPage";
 
 const ROUTES = {
-  home: "",
+  home: "home",
   naver: "naver-grid",
   mapbox: "mapbox",
+  gpsTest: "gps-test",
 };
 
 function getRouteFromHash() {
   const rawHash = window.location.hash.replace(/^#/, "").trim();
-  return Object.values(ROUTES).includes(rawHash) ? rawHash : ROUTES.home;
+  if (!rawHash) {
+    return ROUTES.gpsTest;
+  }
+
+  return Object.values(ROUTES).includes(rawHash) ? rawHash : ROUTES.gpsTest;
 }
 
 function navigateTo(route) {
@@ -36,11 +42,14 @@ function HomePage() {
         </p>
 
         <div className="route-home__actions">
-          <button type="button" onClick={() => navigateTo(ROUTES.naver)}>
-            네이버 격자 지도
-          </button>
+          {/*<button type="button" onClick={() => navigateTo(ROUTES.naver)}>*/}
+          {/*  네이버 격자 지도*/}
+          {/*</button>*/}
           <button type="button" onClick={() => navigateTo(ROUTES.mapbox)}>
             Mapbox 회전 지도
+          </button>
+          <button type="button" onClick={() => navigateTo(ROUTES.gpsTest)}>
+            GPS 테스트
           </button>
         </div>
       </div>
@@ -63,6 +72,10 @@ export default function App() {
 
   if (route === ROUTES.mapbox) {
     return <MapboxRotatePage onBack={() => navigateTo(ROUTES.home)} />;
+  }
+
+  if (route === ROUTES.gpsTest) {
+    return <GpsTestPage onBack={() => navigateTo(ROUTES.home)} />;
   }
 
   return <HomePage />;
