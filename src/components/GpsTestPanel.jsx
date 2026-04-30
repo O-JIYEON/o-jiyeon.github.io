@@ -14,7 +14,6 @@ export default function GpsTestPanel({
   return (
     <aside className="gps-test-panel" aria-label="GPS 테스트 결과 패널">
       <p className="eyebrow">GPS TEST</p>
-      <h2>GPS 테스트 결과</h2>
       <section className="gps-session-list-section" aria-label="GPS 세션 목록">
         <div className="gps-session-list-section__header">
           <h3>세션 목록</h3>
