@@ -405,9 +405,11 @@ body {
   top: 10px;
   right: 10px;
   z-index: 21;
-  width: 372px;
+  width: clamp(320px, 32vw, 420px);
+  max-height: calc(100vh - 20px);
   min-height: 200px;
   padding: 14px;
+  overflow-y: auto;
   border: 1px solid var(--panel-border);
   border-radius: 18px;
   background:
@@ -472,7 +474,7 @@ body {
 .gps-session-list {
   display: grid;
   gap: 8px;
-  max-height: 260px;
+  max-height: min(30vh, 260px);
   overflow-y: auto;
 }
 
@@ -609,6 +611,67 @@ body {
 .gps-result-table tbody td:first-child {
   color: #d7e5db;
   font-weight: 700;
+}
+
+@media (max-width: 1280px) {
+  .gps-test-panel {
+    width: clamp(300px, 36vw, 380px);
+    padding: 12px;
+  }
+
+  .gps-session-list {
+    max-height: min(26vh, 220px);
+  }
+
+  .gps-result-table th,
+  .gps-result-table td {
+    padding: 9px 10px;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .gps-test-panel {
+    width: min(340px, calc(100vw - 20px));
+    padding: 12px;
+  }
+
+  .gps-test-panel h2 {
+    font-size: 17px;
+  }
+
+  .gps-session-list-section,
+  .gps-result-section {
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .gps-session-list {
+    max-height: min(24vh, 200px);
+  }
+
+  .gps-session-card {
+    padding: 10px;
+  }
+
+  .gps-session-card__header strong {
+    font-size: 12px;
+  }
+
+  .gps-session-card__meta dd,
+  .gps-session-card__meta dt {
+    font-size: 11px;
+  }
+
+  .gps-result-table-title {
+    font-size: 12px;
+  }
+
+  .gps-result-table th,
+  .gps-result-table td {
+    padding: 8px 9px;
+    font-size: 11px;
+  }
 }
 
 .gps-track-tooltip {
@@ -1126,6 +1189,22 @@ body {
 
   .gps-test-panel {
     width: min(372px, calc(100vw - 20px));
+    max-height: calc(100vh - 20px);
     min-height: 160px;
+  }
+
+  .gps-session-list-section__header {
+    align-items: flex-start;
+  }
+
+  .gps-session-list-section__actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .gps-result-table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
   }
 }
