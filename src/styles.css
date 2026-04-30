@@ -136,6 +136,47 @@ body {
   margin: 0 14px 14px 0;
 }
 
+.gps-track-visibility-panel {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 21;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(58, 69, 64, 0.9), rgba(34, 42, 39, 0.94)),
+    var(--panel-bg);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--panel-shadow);
+}
+
+.gps-track-visibility-panel__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.28);
+}
+
+.gps-track-visibility-panel__row--raw {
+  color: #ff8a8a;
+}
+
+.gps-track-visibility-panel__row--corrected {
+  color: #7db5ff;
+}
+
+.gps-track-visibility-panel__row input {
+  margin: 0;
+  accent-color: currentColor;
+}
+
 .overlay-name-marker {
   pointer-events: none;
   padding: 2px 6px;
@@ -1235,6 +1276,11 @@ body {
     width: min(372px, calc(100vw - 20px));
     max-height: calc(100vh - 20px);
     min-height: 160px;
+  }
+
+  .gps-track-visibility-panel {
+    gap: 8px;
+    padding: 10px 12px;
   }
 
   .gps-session-list-section__header {

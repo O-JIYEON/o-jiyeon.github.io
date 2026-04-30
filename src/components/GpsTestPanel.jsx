@@ -1,4 +1,5 @@
 export default function GpsTestPanel({
+  panelRef,
   gpsSessions,
   gpsSessionsLoading,
   gpsSessionsError,
@@ -12,7 +13,7 @@ export default function GpsTestPanel({
   onSelectSession,
 }) {
   return (
-    <aside className="gps-test-panel" aria-label="GPS 테스트 결과 패널">
+    <aside ref={panelRef} className="gps-test-panel" aria-label="GPS 테스트 결과 패널">
       {/*<p className="eyebrow">GPS TEST</p>*/}
       <section className="gps-session-list-section" aria-label="GPS 세션 목록">
         <div className="gps-session-list-section__header">

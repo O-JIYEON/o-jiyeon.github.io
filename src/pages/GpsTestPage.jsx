@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import GpsTestPanel from "../components/GpsTestPanel";
+import GpsTrackVisibilityPanel from "../components/GpsTrackVisibilityPanel";
 import {
   DEFAULT_BEARING,
   DEFAULT_CENTER,
@@ -44,6 +45,7 @@ function formatGpsSessionDate(value) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
     hour12: false,
   }).format(parsed);
 }
@@ -166,6 +168,7 @@ export default function GpsTestPage() {
   const mapRef = useRef(null);
   const mapboxGlRef = useRef(null);
   const gpsHoverPopupRef = useRef(null);
+  const gpsPanelRef = useRef(null);
   const gpsTrackGeoJsonRef = useRef(createEmptyFeatureCollection());
   const drawStateRef = useRef(getDefaultDrawState());
   const forceSelectFirstSessionRef = useRef(false);
@@ -181,6 +184,8 @@ export default function GpsTestPage() {
   const [gpsTrackError, setGpsTrackError] = useState("");
   const [gpsTrackSummary, setGpsTrackSummary] = useState(null);
   const [gpsSessionsRefreshToken, setGpsSessionsRefreshToken] = useState(0);
+  const [rawTrackVisible, setRawTrackVisible] = useState(true);
+  const [correctedTrackVisible, setCorrectedTrackVisible] = useState(true);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -276,6 +281,7 @@ export default function GpsTestPage() {
           mapRef.current?.easeTo({
             center: firstCoordinate,
             zoom: 18,
+            offset: getPanelAwareOffset(),
             duration: 900,
           });
         }
@@ -297,6 +303,10 @@ export default function GpsTestPage() {
 
     return () => controller.abort();
   }, [selectedGpsSessionId]);
+
+  useEffect(() => {
+    updateGpsTrackVisibility();
+  }, [rawTrackVisible, correctedTrackVisible]);
 
   useEffect(() => {
     if (!mapboxAccessToken) {
@@ -512,6 +522,34 @@ export default function GpsTestPage() {
     }
 
     gpsTrackSource.setData(gpsTrackGeoJsonRef.current);
+    updateGpsTrackVisibility();
+  }
+
+  function updateGpsTrackVisibility() {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+
+    if (map.getLayer(GPS_TRACK_RAW_LAYER_ID)) {
+      map.setLayoutProperty(GPS_TRACK_RAW_LAYER_ID, "visibility", rawTrackVisible ? "visible" : "none");
+    }
+    if (map.getLayer(GPS_TRACK_RAW_POINT_LAYER_ID)) {
+      map.setLayoutProperty(GPS_TRACK_RAW_POINT_LAYER_ID, "visibility", rawTrackVisible ? "visible" : "none");
+    }
+    if (map.getLayer(GPS_TRACK_CORRECTED_LAYER_ID)) {
+      map.setLayoutProperty(GPS_TRACK_CORRECTED_LAYER_ID, "visibility", correctedTrackVisible ? "visible" : "none");
+    }
+    if (map.getLayer(GPS_TRACK_CORRECTED_POINT_LAYER_ID)) {
+      map.setLayoutProperty(GPS_TRACK_CORRECTED_POINT_LAYER_ID, "visibility", correctedTrackVisible ? "visible" : "none");
+    }
+    if (map.getLayer(GPS_TRACK_START_LAYER_ID)) {
+      map.setLayoutProperty(
+        GPS_TRACK_START_LAYER_ID,
+        "visibility",
+        rawTrackVisible || correctedTrackVisible ? "visible" : "none",
+      );
+    }
   }
 
   function buildGpsTrackTooltipHtml(feature) {
@@ -560,9 +598,25 @@ export default function GpsTestPage() {
     gpsHoverPopupRef.current?.remove();
   }
 
+  function getPanelAwareOffset() {
+    const panelWidth = gpsPanelRef.current?.offsetWidth ?? 0;
+    if (!panelWidth) {
+      return [0, 0];
+    }
+
+    return [Math.round(panelWidth * -0.45), 0];
+  }
+
   return (
     <div className="app-shell">
+      <GpsTrackVisibilityPanel
+        rawVisible={rawTrackVisible}
+        correctedVisible={correctedTrackVisible}
+        onToggleRawVisible={setRawTrackVisible}
+        onToggleCorrectedVisible={setCorrectedTrackVisible}
+      />
       <GpsTestPanel
+        panelRef={gpsPanelRef}
         gpsSessions={gpsSessions}
         gpsSessionsLoading={gpsSessionsLoading}
         gpsSessionsError={gpsSessionsError}
