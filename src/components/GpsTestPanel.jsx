@@ -9,6 +9,8 @@ export default function GpsTestPanel({
   gpsTrackSummary,
   formatGpsSessionDate,
   getGpsResultRows,
+  playbackIndex,
+  playbackTotal,
   onRefresh,
   onSelectSession,
 }) {
@@ -43,7 +45,19 @@ export default function GpsTestPanel({
               >
                 <div className="gps-session-card__header">
                   <strong>{session.name || "이름 없는 세션"}</strong>
-                  <span>{session.pointCount ?? 0} pts</span>
+                  {selectedGpsSessionId === session.id && playbackTotal > 0 ? (
+                    <div className="gps-session-card__playback">
+                      <div className="gps-session-card__playback-track">
+                        <div
+                          className="gps-session-card__playback-fill"
+                          style={{ width: `${playbackTotal > 0 ? Math.min((playbackIndex / playbackTotal) * 100, 100) : 0}%` }}
+                        />
+                      </div>
+                      <span>{`${playbackIndex}/${playbackTotal} pts`}</span>
+                    </div>
+                  ) : (
+                    <span>{`${session.pointCount ?? 0} pts`}</span>
+                  )}
                 </div>
                 <dl className="gps-session-card__meta">
                   <div>

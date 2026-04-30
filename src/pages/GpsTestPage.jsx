@@ -95,6 +95,13 @@ function sortGpsSessions(list) {
   });
 }
 
+function createPlaybackTracks(tracks, count) {
+  return {
+    raw: Array.isArray(tracks?.raw) ? tracks.raw.slice(0, count) : [],
+    corrected: Array.isArray(tracks?.corrected) ? tracks.corrected.slice(0, count) : [],
+  };
+}
+
 function createGpsTrackGeoJson(tracks) {
   const rawCoordinates = Array.isArray(tracks?.raw) ? tracks.raw.map((point) => [point.lng, point.lat]) : [];
   const correctedCoordinates = Array.isArray(tracks?.corrected) ? tracks.corrected.map((point) => [point.lng, point.lat]) : [];
@@ -186,6 +193,9 @@ export default function GpsTestPage() {
   const [gpsSessionsRefreshToken, setGpsSessionsRefreshToken] = useState(0);
   const [rawTrackVisible, setRawTrackVisible] = useState(true);
   const [correctedTrackVisible, setCorrectedTrackVisible] = useState(true);
+  const [gpsTrackPayload, setGpsTrackPayload] = useState(null);
+  const [playbackIndex, setPlaybackIndex] = useState(0);
+  const [isPlaybackRunning, setIsPlaybackRunning] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -247,6 +257,9 @@ export default function GpsTestPage() {
 
   useEffect(() => {
     if (!selectedGpsSessionId) {
+      setGpsTrackPayload(null);
+      setPlaybackIndex(0);
+      setIsPlaybackRunning(false);
       gpsTrackGeoJsonRef.current = createEmptyFeatureCollection();
       setGpsTrackSummary(null);
       setGpsTrackError("");
@@ -272,11 +285,12 @@ export default function GpsTestPage() {
 
         const tracksPayload = await tracksResponse.json();
         const summaryPayload = await summaryResponse.json();
-        gpsTrackGeoJsonRef.current = createGpsTrackGeoJson(tracksPayload);
+        setGpsTrackPayload(tracksPayload);
+        setPlaybackIndex(0);
+        setIsPlaybackRunning(true);
         setGpsTrackSummary(summaryPayload);
-        syncGpsTrackLayers();
 
-        const firstCoordinate = gpsTrackGeoJsonRef.current.features.find((feature) => feature.properties?.kind === "start")?.geometry?.coordinates;
+        const firstCoordinate = createGpsTrackGeoJson(tracksPayload).features.find((feature) => feature.properties?.kind === "start")?.geometry?.coordinates;
         if (Array.isArray(firstCoordinate) && firstCoordinate.length === 2) {
           mapRef.current?.easeTo({
             center: firstCoordinate,
@@ -290,6 +304,9 @@ export default function GpsTestPage() {
         if (error instanceof Error && error.name === "AbortError") {
           return;
         }
+        setGpsTrackPayload(null);
+        setPlaybackIndex(0);
+        setIsPlaybackRunning(false);
         gpsTrackGeoJsonRef.current = createEmptyFeatureCollection();
         setGpsTrackSummary(null);
         setGpsTrackError(error instanceof Error ? error.message : "트래킹 결과를 불러오지 못했습니다.");
@@ -307,6 +324,44 @@ export default function GpsTestPage() {
   useEffect(() => {
     updateGpsTrackVisibility();
   }, [rawTrackVisible, correctedTrackVisible]);
+
+  useEffect(() => {
+    const total = getPlaybackTotalCount();
+
+    if (!gpsTrackPayload || total === 0) {
+      gpsTrackGeoJsonRef.current = createEmptyFeatureCollection();
+      syncGpsTrackLayers();
+      return;
+    }
+
+    gpsTrackGeoJsonRef.current = createGpsTrackGeoJson(createPlaybackTracks(gpsTrackPayload, playbackIndex));
+    syncGpsTrackLayers();
+  }, [gpsTrackPayload, playbackIndex]);
+
+  useEffect(() => {
+    if (!isPlaybackRunning) {
+      return undefined;
+    }
+
+    const total = getPlaybackTotalCount();
+    if (!gpsTrackPayload || total === 0) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      setPlaybackIndex((current) => {
+        if (current >= total) {
+          window.clearInterval(timer);
+          setIsPlaybackRunning(false);
+          return current;
+        }
+
+        return current + 1;
+      });
+    }, 100);
+
+    return () => window.clearInterval(timer);
+  }, [gpsTrackPayload, isPlaybackRunning]);
 
   useEffect(() => {
     if (!mapboxAccessToken) {
@@ -607,6 +662,24 @@ export default function GpsTestPage() {
     return [Math.round(panelWidth * -0.45), 0];
   }
 
+  function getPlaybackTotalCount() {
+    return Math.max(gpsTrackPayload?.raw?.length ?? 0, gpsTrackPayload?.corrected?.length ?? 0);
+  }
+
+  function handleSelectSession(nextSessionId) {
+    if (!nextSessionId) {
+      return;
+    }
+
+    if (nextSessionId === selectedGpsSessionId && gpsTrackPayload) {
+      setPlaybackIndex(0);
+      setIsPlaybackRunning(true);
+      return;
+    }
+
+    setSelectedGpsSessionId(nextSessionId);
+  }
+
   return (
     <div className="app-shell">
       <GpsTrackVisibilityPanel
@@ -626,8 +699,10 @@ export default function GpsTestPage() {
         gpsTrackSummary={gpsTrackSummary}
         formatGpsSessionDate={formatGpsSessionDate}
         getGpsResultRows={getGpsResultRows}
+        playbackIndex={playbackIndex}
+        playbackTotal={getPlaybackTotalCount()}
         onRefresh={() => setGpsSessionsRefreshToken((current) => current + 1)}
-        onSelectSession={setSelectedGpsSessionId}
+        onSelectSession={handleSelectSession}
       />
       <main ref={mapRootRef} className="map-root map-root--mapbox" aria-label="GPS 테스트 지도" />
       {errorMessage ? <div className="error-banner">{errorMessage}</div> : null}
