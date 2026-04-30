@@ -13,7 +13,7 @@ export default function GpsTestPanel({
 }) {
   return (
     <aside className="gps-test-panel" aria-label="GPS 테스트 결과 패널">
-      <p className="eyebrow">GPS TEST</p>
+      {/*<p className="eyebrow">GPS TEST</p>*/}
       <section className="gps-session-list-section" aria-label="GPS 세션 목록">
         <div className="gps-session-list-section__header">
           <h3>세션 목록</h3>
@@ -46,6 +46,10 @@ export default function GpsTestPanel({
                 </div>
                 <dl className="gps-session-card__meta">
                   <div>
+                    <dt>ID</dt>
+                    <dd>{session.id}</dd>
+                  </div>
+                  <div>
                     <dt>시작</dt>
                     <dd>{formatGpsSessionDate(session.startedAt)}</dd>
                   </div>
@@ -63,7 +67,6 @@ export default function GpsTestPanel({
       <section className="gps-result-section" aria-label="GPS 테스트 결과">
         <div className="gps-session-list-section__header">
           <h3>테스트 결과</h3>
-          <span>{selectedGpsSessionId ? "선택됨" : "미선택"}</span>
         </div>
 
         {gpsTrackLoading ? <p className="gps-session-list__status">트래킹 결과를 불러오는 중입니다.</p> : null}

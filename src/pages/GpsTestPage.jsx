@@ -528,7 +528,6 @@ export default function GpsTestPage() {
         <div><strong>경도</strong>${Number.isFinite(lng) ? lng.toFixed(6) : "-"}</div>
         <div><strong>정확도</strong>${formatGpsMetric(properties.accuracy, "m")}</div>
         <div><strong>기록시각</strong>${formatGpsSessionDate(properties.recordedAt)}</div>
-        ${properties.status ? `<div><strong>상태</strong>${properties.status}</div>` : ""}
       </div>
     `;
   }

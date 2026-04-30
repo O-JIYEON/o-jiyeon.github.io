@@ -9,7 +9,7 @@
   --accent-a: #90f0b7;
   --accent-b: #ffd56a;
   --stroke: rgba(255, 255, 255, 0.08);
-  --font-ui: "SF Pro Display", "Pretendard", "Noto Sans KR", sans-serif;
+  --font-ui: "Pretendard", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
 }
 
 * {
@@ -27,6 +27,7 @@ body,
 body {
   overflow: hidden;
   font-family: var(--font-ui);
+  font-weight: 500;
   color: var(--text-main);
   background:
     radial-gradient(circle at top left, rgba(109, 152, 121, 0.18), transparent 30%),
@@ -560,6 +561,7 @@ body {
   margin: 0;
   font-size: 12px;
   line-height: 1.4;
+  font-variant-numeric: tabular-nums;
 }
 
 .gps-result-table-wrap {
@@ -602,6 +604,7 @@ body {
 
 .gps-result-table td {
   color: var(--text-main);
+  font-variant-numeric: tabular-nums;
 }
 
 .gps-result-table tbody tr:last-child td {
@@ -681,7 +684,8 @@ body {
   color: #17212b;
   font-size: 12px;
   line-height: 1.45;
-  font-weight: 600;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
 .gps-track-tooltip strong {
