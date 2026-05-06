@@ -62,10 +62,6 @@ export default function GpsTestPanel({
                 </div>
                 <dl className="gps-session-card__meta">
                   <div>
-                    <dt>ID</dt>
-                    <dd>{session.id}</dd>
-                  </div>
-                  <div>
                     <dt>시작</dt>
                     <dd>{formatGpsSessionDate(session.startedAt)}</dd>
                   </div>
