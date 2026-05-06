@@ -86,7 +86,10 @@ export default function GpsTestPanel({
         {!gpsTrackLoading && !gpsTrackError && !selectedGpsSessionId ? (
           <p className="gps-session-list__status">트래킹 목록에서 항목을 선택하면 결과와 경로를 표시합니다.</p>
         ) : null}
-        {!gpsTrackLoading && !gpsTrackError && gpsTrackSummary ? (
+        {!gpsTrackLoading && !gpsTrackError && selectedGpsSessionId && selectedSessionIsLive ? (
+          <p className="gps-session-list__status">트래킹중입니다.</p>
+        ) : null}
+        {!gpsTrackLoading && !gpsTrackError && !selectedSessionIsLive && gpsTrackSummary ? (
           <div className="gps-result-table-wrap">
             <div className="gps-result-table-title">{gpsTrackSummary.name || "선택한 트래킹"}</div>
             <table className="gps-result-table">
