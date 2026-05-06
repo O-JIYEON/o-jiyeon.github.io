@@ -11,6 +11,7 @@ export default function GpsTestPanel({
   getGpsResultRows,
   playbackIndex,
   playbackTotal,
+  selectedSessionIsLive,
   onRefresh,
   onSelectSession,
 }) {
@@ -45,7 +46,7 @@ export default function GpsTestPanel({
               >
                 <div className="gps-session-card__header">
                   <strong>{session.name || "이름 없는 세션"}</strong>
-                  {selectedGpsSessionId === session.id && playbackTotal > 0 ? (
+                  {selectedGpsSessionId === session.id && playbackTotal > 0 && !selectedSessionIsLive ? (
                     <div className="gps-session-card__playback">
                       <div className="gps-session-card__playback-track">
                         <div

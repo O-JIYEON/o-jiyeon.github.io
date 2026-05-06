@@ -102,6 +102,30 @@ function createPlaybackTracks(tracks, count) {
   };
 }
 
+function appendFlutterPointToTracks(existingTracks, point) {
+  const nextRaw = {
+    pointIndex: point.pointIndex,
+    recordedAt: point.recordedAt ?? new Date().toISOString(),
+    lat: point.rawLat,
+    lng: point.rawLng,
+    accuracy: point.rawAccuracy ?? point.accuracy ?? null,
+  };
+
+  const nextCorrected = {
+    pointIndex: point.pointIndex,
+    recordedAt: point.recordedAt ?? new Date().toISOString(),
+    lat: point.correctedLat,
+    lng: point.correctedLng,
+    accuracy: point.correctedAccuracy ?? point.accuracy ?? null,
+    status: point.status ?? "",
+  };
+
+  return {
+    raw: [...(existingTracks?.raw ?? []), nextRaw],
+    corrected: [...(existingTracks?.corrected ?? []), nextCorrected],
+  };
+}
+
 function createGpsTrackGeoJson(tracks) {
   const rawCoordinates = Array.isArray(tracks?.raw) ? tracks.raw.map((point) => [point.lng, point.lat]) : [];
   const correctedCoordinates = Array.isArray(tracks?.corrected) ? tracks.corrected.map((point) => [point.lng, point.lat]) : [];
@@ -177,6 +201,7 @@ export default function GpsTestPage() {
   const gpsHoverPopupRef = useRef(null);
   const gpsPanelRef = useRef(null);
   const gpsTrackGeoJsonRef = useRef(createEmptyFeatureCollection());
+  const liveTracksBySessionRef = useRef({});
   const drawStateRef = useRef(getDefaultDrawState());
   const forceSelectFirstSessionRef = useRef(false);
   const rafRef = useRef(0);
@@ -196,6 +221,7 @@ export default function GpsTestPage() {
   const [gpsTrackPayload, setGpsTrackPayload] = useState(null);
   const [playbackIndex, setPlaybackIndex] = useState(0);
   const [isPlaybackRunning, setIsPlaybackRunning] = useState(false);
+  const [liveSessionIds, setLiveSessionIds] = useState([]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -247,12 +273,67 @@ export default function GpsTestPage() {
         return;
       }
 
+      setLiveSessionIds((current) => current.filter((id) => id !== sessionId));
+      delete liveTracksBySessionRef.current[sessionId];
       forceSelectFirstSessionRef.current = true;
       setGpsSessionsRefreshToken((current) => current + 1);
     }
 
     window.addEventListener("flutterSessionEnded", handleFlutterSessionEnded);
     return () => window.removeEventListener("flutterSessionEnded", handleFlutterSessionEnded);
+  }, []);
+
+  useEffect(() => {
+    function handleFlutterPointSaved(event) {
+      const point = event.detail;
+      if (!point?.sessionId || point.rawLat == null || point.rawLng == null || point.correctedLat == null || point.correctedLng == null) {
+        return;
+      }
+
+      setLiveSessionIds((current) => (current.includes(point.sessionId) ? current : [point.sessionId, ...current]));
+      setGpsSessions((current) => {
+        const existingIndex = current.findIndex((session) => session.id === point.sessionId);
+        const nowIso = new Date().toISOString();
+
+        if (existingIndex === -1) {
+          return [
+            {
+              id: point.sessionId,
+              name: "진행 중 세션",
+              startedAt: nowIso,
+              endedAt: null,
+              pointCount: point.pointIndex ?? 1,
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            },
+            ...current,
+          ];
+        }
+
+        const next = [...current];
+        next[existingIndex] = {
+          ...next[existingIndex],
+          pointCount: Math.max(next[existingIndex].pointCount ?? 0, point.pointIndex ?? 0),
+          updatedAt: nowIso,
+          endedAt: next[existingIndex].endedAt ?? null,
+        };
+        return sortGpsSessions(next);
+      });
+
+      setSelectedGpsSessionId(point.sessionId);
+      setIsPlaybackRunning(false);
+
+      setGpsTrackPayload(() => {
+        const currentTracks = liveTracksBySessionRef.current[point.sessionId] ?? { raw: [], corrected: [] };
+        const nextTracks = appendFlutterPointToTracks(currentTracks, point);
+        liveTracksBySessionRef.current[point.sessionId] = nextTracks;
+        setPlaybackIndex(Math.max(nextTracks.raw.length, nextTracks.corrected.length));
+        return nextTracks;
+      });
+    }
+
+    window.addEventListener("flutterPointSaved", handleFlutterPointSaved);
+    return () => window.removeEventListener("flutterPointSaved", handleFlutterPointSaved);
   }, []);
 
   useEffect(() => {
@@ -285,12 +366,15 @@ export default function GpsTestPage() {
 
         const tracksPayload = await tracksResponse.json();
         const summaryPayload = await summaryResponse.json();
-        setGpsTrackPayload(tracksPayload);
-        setPlaybackIndex(0);
-        setIsPlaybackRunning(true);
+        const nextTracks = liveSessionIds.includes(selectedGpsSessionId)
+          ? liveTracksBySessionRef.current[selectedGpsSessionId] ?? tracksPayload
+          : tracksPayload;
+        setGpsTrackPayload(nextTracks);
+        setPlaybackIndex(liveSessionIds.includes(selectedGpsSessionId) ? Math.max(nextTracks.raw?.length ?? 0, nextTracks.corrected?.length ?? 0) : 0);
+        setIsPlaybackRunning(!liveSessionIds.includes(selectedGpsSessionId));
         setGpsTrackSummary(summaryPayload);
 
-        const firstCoordinate = createGpsTrackGeoJson(tracksPayload).features.find((feature) => feature.properties?.kind === "start")?.geometry?.coordinates;
+        const firstCoordinate = createGpsTrackGeoJson(nextTracks).features.find((feature) => feature.properties?.kind === "start")?.geometry?.coordinates;
         if (Array.isArray(firstCoordinate) && firstCoordinate.length === 2) {
           mapRef.current?.easeTo({
             center: firstCoordinate,
@@ -319,7 +403,7 @@ export default function GpsTestPage() {
       });
 
     return () => controller.abort();
-  }, [selectedGpsSessionId]);
+  }, [selectedGpsSessionId, liveSessionIds]);
 
   useEffect(() => {
     updateGpsTrackVisibility();
@@ -334,9 +418,11 @@ export default function GpsTestPage() {
       return;
     }
 
-    gpsTrackGeoJsonRef.current = createGpsTrackGeoJson(createPlaybackTracks(gpsTrackPayload, playbackIndex));
+    gpsTrackGeoJsonRef.current = createGpsTrackGeoJson(
+      liveSessionIds.includes(selectedGpsSessionId) ? gpsTrackPayload : createPlaybackTracks(gpsTrackPayload, playbackIndex),
+    );
     syncGpsTrackLayers();
-  }, [gpsTrackPayload, playbackIndex]);
+  }, [gpsTrackPayload, playbackIndex, liveSessionIds, selectedGpsSessionId]);
 
   useEffect(() => {
     if (!isPlaybackRunning) {
@@ -344,7 +430,7 @@ export default function GpsTestPage() {
     }
 
     const total = getPlaybackTotalCount();
-    if (!gpsTrackPayload || total === 0) {
+    if (!gpsTrackPayload || total === 0 || liveSessionIds.includes(selectedGpsSessionId)) {
       return undefined;
     }
 
@@ -361,7 +447,7 @@ export default function GpsTestPage() {
     }, 100);
 
     return () => window.clearInterval(timer);
-  }, [gpsTrackPayload, isPlaybackRunning]);
+  }, [gpsTrackPayload, isPlaybackRunning, liveSessionIds, selectedGpsSessionId]);
 
   useEffect(() => {
     if (!mapboxAccessToken) {
@@ -671,6 +757,12 @@ export default function GpsTestPage() {
       return;
     }
 
+    if (liveSessionIds.includes(nextSessionId)) {
+      setSelectedGpsSessionId(nextSessionId);
+      setIsPlaybackRunning(false);
+      return;
+    }
+
     if (nextSessionId === selectedGpsSessionId && gpsTrackPayload) {
       setPlaybackIndex(0);
       setIsPlaybackRunning(true);
@@ -701,6 +793,7 @@ export default function GpsTestPage() {
         getGpsResultRows={getGpsResultRows}
         playbackIndex={playbackIndex}
         playbackTotal={getPlaybackTotalCount()}
+        selectedSessionIsLive={liveSessionIds.includes(selectedGpsSessionId)}
         onRefresh={() => setGpsSessionsRefreshToken((current) => current + 1)}
         onSelectSession={handleSelectSession}
       />
