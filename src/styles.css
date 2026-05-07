@@ -653,22 +653,43 @@ body {
   flex: 0 0 auto;
 }
 
-.gps-session-card__playback-track {
+.gps-session-card__playback-control {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 193, 37, 0.35);
+  border-radius: 999px;
+  background: rgba(255, 193, 37, 0.2);
+  cursor: pointer;
+  transition:
+    width 220ms ease,
+    height 220ms ease,
+    border-radius 220ms ease,
+    background-color 220ms ease,
+    border-color 220ms ease;
+}
+
+.gps-session-card__playback-control.is-running {
   width: 132px;
   height: 10px;
-  overflow: hidden;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
+  justify-content: flex-start;
+  border-color: transparent;
   background: rgba(255, 255, 255, 0.16);
-  cursor: pointer;
 }
 
 .gps-session-card__playback-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, #ffcf38, #ffc125);
+  transition: width 90ms linear;
 }
 
 .gps-session-card__playback-trigger {
@@ -676,20 +697,36 @@ body {
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
+  opacity: 1;
   width: 0;
   height: 0;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  border-left: 6px solid #111111;
-  transition: border-left-width 120ms ease, border-top-width 120ms ease, border-bottom-width 120ms ease;
+  border-top: 3px solid transparent;
+  border-bottom: 3px solid transparent;
+  border-left: 4px solid #111111;
+  transition:
+    border-left-width 120ms ease,
+    border-top-width 120ms ease,
+    border-bottom-width 120ms ease,
+    opacity 140ms ease,
+    transform 180ms ease;
   pointer-events: none;
 }
 
-.gps-session-card__playback-track:hover .gps-session-card__playback-trigger,
-.gps-session-card__playback-track:focus-visible .gps-session-card__playback-trigger {
-  border-top-width: 5px;
-  border-bottom-width: 5px;
-  border-left-width: 8px;
+.gps-session-card__playback-control.is-running .gps-session-card__playback-trigger {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.8);
+}
+
+.gps-session-card__playback-control:hover .gps-session-card__playback-trigger,
+.gps-session-card__playback-control:focus-visible .gps-session-card__playback-trigger {
+  border-top-width: 4px;
+  border-bottom-width: 4px;
+  border-left-width: 5px;
+}
+
+.gps-session-card__playback-control:focus-visible {
+  outline: 2px solid rgba(255, 207, 56, 0.85);
+  outline-offset: 2px;
 }
 
 .gps-session-card__playback > span {

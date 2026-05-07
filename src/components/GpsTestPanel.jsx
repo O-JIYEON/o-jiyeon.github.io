@@ -52,18 +52,21 @@ export default function GpsTestPanel({
                     <div className="gps-session-card__playback">
                       <button
                         type="button"
-                        className="gps-session-card__playback-track"
-                        aria-label="재생"
+                        className={`gps-session-card__playback-control ${isPlaybackRunning ? "is-running" : ""}`}
+                        aria-label={isPlaybackRunning ? "재생 진행률" : "재생"}
+                        aria-pressed={isPlaybackRunning}
                         onClick={(event) => {
                           event.stopPropagation();
-                          onStartPlayback();
+                          if (!isPlaybackRunning) {
+                            onStartPlayback();
+                          }
                         }}
                       >
                         <div
                           className="gps-session-card__playback-fill"
                           style={{ width: `${playbackTotal > 0 ? Math.min((playbackIndex / playbackTotal) * 100, 100) : 0}%` }}
                         />
-                        {!isPlaybackRunning ? <span className="gps-session-card__playback-trigger" aria-hidden="true" /> : null}
+                        <span className="gps-session-card__playback-trigger" aria-hidden="true" />
                       </button>
                       <span>{`${playbackIndex}/${playbackTotal} pts`}</span>
                     </div>
