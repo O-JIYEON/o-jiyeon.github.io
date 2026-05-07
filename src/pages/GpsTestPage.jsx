@@ -370,8 +370,8 @@ export default function GpsTestPage() {
           ? liveTracksBySessionRef.current[selectedGpsSessionId] ?? tracksPayload
           : tracksPayload;
         setGpsTrackPayload(nextTracks);
-        setPlaybackIndex(liveSessionIds.includes(selectedGpsSessionId) ? Math.max(nextTracks.raw?.length ?? 0, nextTracks.corrected?.length ?? 0) : 0);
-        setIsPlaybackRunning(!liveSessionIds.includes(selectedGpsSessionId));
+        setPlaybackIndex(Math.max(nextTracks.raw?.length ?? 0, nextTracks.corrected?.length ?? 0));
+        setIsPlaybackRunning(false);
         setGpsTrackSummary(summaryPayload);
 
         const firstCoordinate = createGpsTrackGeoJson(nextTracks).features.find((feature) => feature.properties?.kind === "start")?.geometry?.coordinates;
@@ -764,12 +764,22 @@ export default function GpsTestPage() {
     }
 
     if (nextSessionId === selectedGpsSessionId && gpsTrackPayload) {
-      setPlaybackIndex(0);
-      setIsPlaybackRunning(true);
+      setPlaybackIndex(getPlaybackTotalCount());
+      setIsPlaybackRunning(false);
       return;
     }
 
     setSelectedGpsSessionId(nextSessionId);
+  }
+
+  function handleStartPlayback() {
+    const total = getPlaybackTotalCount();
+    if (!gpsTrackPayload || total === 0 || liveSessionIds.includes(selectedGpsSessionId)) {
+      return;
+    }
+
+    setPlaybackIndex(0);
+    setIsPlaybackRunning(true);
   }
 
   return (
@@ -793,9 +803,11 @@ export default function GpsTestPage() {
         getGpsResultRows={getGpsResultRows}
         playbackIndex={playbackIndex}
         playbackTotal={getPlaybackTotalCount()}
+        isPlaybackRunning={isPlaybackRunning}
         selectedSessionIsLive={liveSessionIds.includes(selectedGpsSessionId)}
         onRefresh={() => setGpsSessionsRefreshToken((current) => current + 1)}
         onSelectSession={handleSelectSession}
+        onStartPlayback={handleStartPlayback}
       />
       <main ref={mapRootRef} className="map-root map-root--mapbox" aria-label="GPS 테스트 지도" />
       {errorMessage ? <div className="error-banner">{errorMessage}</div> : null}

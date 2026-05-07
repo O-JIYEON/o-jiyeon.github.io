@@ -11,9 +11,11 @@ export default function GpsTestPanel({
   getGpsResultRows,
   playbackIndex,
   playbackTotal,
+  isPlaybackRunning,
   selectedSessionIsLive,
   onRefresh,
   onSelectSession,
+  onStartPlayback,
 }) {
   return (
     <aside ref={panelRef} className="gps-test-panel" aria-label="GPS 테스트 결과 패널">
@@ -48,12 +50,21 @@ export default function GpsTestPanel({
                   <strong>{session.name || "이름 없는 세션"}</strong>
                   {selectedGpsSessionId === session.id && playbackTotal > 0 && !selectedSessionIsLive ? (
                     <div className="gps-session-card__playback">
-                      <div className="gps-session-card__playback-track">
+                      <button
+                        type="button"
+                        className="gps-session-card__playback-track"
+                        aria-label="재생"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onStartPlayback();
+                        }}
+                      >
                         <div
                           className="gps-session-card__playback-fill"
                           style={{ width: `${playbackTotal > 0 ? Math.min((playbackIndex / playbackTotal) * 100, 100) : 0}%` }}
                         />
-                      </div>
+                        {!isPlaybackRunning ? <span className="gps-session-card__playback-trigger">▶</span> : null}
+                      </button>
                       <span>{`${playbackIndex}/${playbackTotal} pts`}</span>
                     </div>
                   ) : (
