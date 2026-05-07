@@ -754,7 +754,6 @@ body {
 
 @media (max-width: 1280px) {
   .gps-test-panel {
-    width: clamp(300px, 36vw, 380px);
     padding: 12px;
   }
 
@@ -771,7 +770,6 @@ body {
 
 @media (max-width: 1024px) {
   .gps-test-panel {
-    width: min(340px, calc(100vw - 20px));
     padding: 12px;
   }
 
@@ -1328,7 +1326,6 @@ body {
   }
 
   .gps-test-panel {
-    width: min(372px, calc(100vw - 20px));
     max-height: calc(100vh - 20px);
     min-height: 160px;
   }
