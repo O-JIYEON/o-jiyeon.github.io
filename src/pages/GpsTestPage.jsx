@@ -95,10 +95,35 @@ function sortGpsSessions(list) {
   });
 }
 
+function getTrackPlaybackSteps(tracks) {
+  const steps = new Set();
+
+  (tracks?.raw ?? []).forEach((point, index) => {
+    steps.add(point?.pointIndex ?? index + 1);
+  });
+
+  (tracks?.corrected ?? []).forEach((point, index) => {
+    steps.add(point?.pointIndex ?? index + 1);
+  });
+
+  return Array.from(steps).sort((a, b) => a - b);
+}
+
 function createPlaybackTracks(tracks, count) {
+  const playbackSteps = getTrackPlaybackSteps(tracks);
+  const lastVisibleStep = playbackSteps[Math.max(0, count - 1)];
+
+  if (lastVisibleStep == null) {
+    return { raw: [], corrected: [] };
+  }
+
   return {
-    raw: Array.isArray(tracks?.raw) ? tracks.raw.slice(0, count) : [],
-    corrected: Array.isArray(tracks?.corrected) ? tracks.corrected.slice(0, count) : [],
+    raw: Array.isArray(tracks?.raw)
+      ? tracks.raw.filter((point, index) => (point?.pointIndex ?? index + 1) <= lastVisibleStep)
+      : [],
+    corrected: Array.isArray(tracks?.corrected)
+      ? tracks.corrected.filter((point, index) => (point?.pointIndex ?? index + 1) <= lastVisibleStep)
+      : [],
   };
 }
 
@@ -749,7 +774,7 @@ export default function GpsTestPage() {
   }
 
   function getPlaybackTotalCount() {
-    return Math.max(gpsTrackPayload?.raw?.length ?? 0, gpsTrackPayload?.corrected?.length ?? 0);
+    return getTrackPlaybackSteps(gpsTrackPayload).length;
   }
 
   function handleSelectSession(nextSessionId) {
