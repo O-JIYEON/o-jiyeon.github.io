@@ -63,7 +63,7 @@ export default function GpsTestPanel({
                           className="gps-session-card__playback-fill"
                           style={{ width: `${playbackTotal > 0 ? Math.min((playbackIndex / playbackTotal) * 100, 100) : 0}%` }}
                         />
-                        {!isPlaybackRunning ? <span className="gps-session-card__playback-trigger">▶</span> : null}
+                        {!isPlaybackRunning ? <span className="gps-session-card__playback-trigger" aria-hidden="true" /> : null}
                       </button>
                       <span>{`${playbackIndex}/${playbackTotal} pts`}</span>
                     </div>

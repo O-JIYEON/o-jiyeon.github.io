@@ -27,7 +27,8 @@ const GPS_TRACK_RAW_LAYER_ID = "echotech-gps-track-raw-layer";
 const GPS_TRACK_CORRECTED_LAYER_ID = "echotech-gps-track-corrected-layer";
 const GPS_TRACK_RAW_POINT_LAYER_ID = "echotech-gps-track-raw-point-layer";
 const GPS_TRACK_CORRECTED_POINT_LAYER_ID = "echotech-gps-track-corrected-point-layer";
-const GPS_TRACK_START_LAYER_ID = "echotech-gps-track-start-layer";
+const GPS_TRACK_RAW_START_LAYER_ID = "echotech-gps-track-raw-start-layer";
+const GPS_TRACK_CORRECTED_START_LAYER_ID = "echotech-gps-track-corrected-start-layer";
 
 function formatGpsSessionDate(value) {
   if (!value) {
@@ -95,10 +96,35 @@ function sortGpsSessions(list) {
   });
 }
 
+function getTrackPlaybackSteps(tracks) {
+  const steps = new Set();
+
+  (tracks?.raw ?? []).forEach((point, index) => {
+    steps.add(point?.pointIndex ?? index + 1);
+  });
+
+  (tracks?.corrected ?? []).forEach((point, index) => {
+    steps.add(point?.pointIndex ?? index + 1);
+  });
+
+  return Array.from(steps).sort((a, b) => a - b);
+}
+
 function createPlaybackTracks(tracks, count) {
+  const playbackSteps = getTrackPlaybackSteps(tracks);
+  const lastVisibleStep = playbackSteps[Math.max(0, count - 1)];
+
+  if (lastVisibleStep == null) {
+    return { raw: [], corrected: [] };
+  }
+
   return {
-    raw: Array.isArray(tracks?.raw) ? tracks.raw.slice(0, count) : [],
-    corrected: Array.isArray(tracks?.corrected) ? tracks.corrected.slice(0, count) : [],
+    raw: Array.isArray(tracks?.raw)
+      ? tracks.raw.filter((point, index) => (point?.pointIndex ?? index + 1) <= lastVisibleStep)
+      : [],
+    corrected: Array.isArray(tracks?.corrected)
+      ? tracks.corrected.filter((point, index) => (point?.pointIndex ?? index + 1) <= lastVisibleStep)
+      : [],
   };
 }
 
@@ -129,7 +155,6 @@ function appendFlutterPointToTracks(existingTracks, point) {
 function createGpsTrackGeoJson(tracks) {
   const rawCoordinates = Array.isArray(tracks?.raw) ? tracks.raw.map((point) => [point.lng, point.lat]) : [];
   const correctedCoordinates = Array.isArray(tracks?.corrected) ? tracks.corrected.map((point) => [point.lng, point.lat]) : [];
-  const firstPoint = correctedCoordinates[0] ?? rawCoordinates[0] ?? null;
   const features = [];
 
   if (rawCoordinates.length > 1) {
@@ -148,11 +173,19 @@ function createGpsTrackGeoJson(tracks) {
     });
   }
 
-  if (firstPoint) {
+  if (rawCoordinates[0]) {
     features.push({
       type: "Feature",
-      properties: { kind: "start" },
-      geometry: { type: "Point", coordinates: firstPoint },
+      properties: { kind: "raw-start" },
+      geometry: { type: "Point", coordinates: rawCoordinates[0] },
+    });
+  }
+
+  if (correctedCoordinates[0]) {
+    features.push({
+      type: "Feature",
+      properties: { kind: "corrected-start" },
+      geometry: { type: "Point", coordinates: correctedCoordinates[0] },
     });
   }
 
@@ -374,7 +407,9 @@ export default function GpsTestPage() {
         setIsPlaybackRunning(false);
         setGpsTrackSummary(summaryPayload);
 
-        const firstCoordinate = createGpsTrackGeoJson(nextTracks).features.find((feature) => feature.properties?.kind === "start")?.geometry?.coordinates;
+        const firstCoordinate =
+          createGpsTrackGeoJson(nextTracks).features.find((feature) => feature.properties?.kind === "corrected-start")?.geometry?.coordinates ??
+          createGpsTrackGeoJson(nextTracks).features.find((feature) => feature.properties?.kind === "raw-start")?.geometry?.coordinates;
         if (Array.isArray(firstCoordinate) && firstCoordinate.length === 2) {
           mapRef.current?.easeTo({
             center: firstCoordinate,
@@ -640,15 +675,30 @@ export default function GpsTestPage() {
       });
     }
 
-    if (!map.getLayer(GPS_TRACK_START_LAYER_ID)) {
+    if (!map.getLayer(GPS_TRACK_RAW_START_LAYER_ID)) {
       map.addLayer({
-        id: GPS_TRACK_START_LAYER_ID,
+        id: GPS_TRACK_RAW_START_LAYER_ID,
         type: "circle",
         source: GPS_TRACK_SOURCE_ID,
-        filter: ["==", ["get", "kind"], "start"],
+        filter: ["==", ["get", "kind"], "raw-start"],
         paint: {
           "circle-radius": 6,
-          "circle-color": "#ffffff",
+          "circle-color": "#ef4444",
+          "circle-stroke-width": 3,
+          "circle-stroke-color": "#0f1720",
+        },
+      });
+    }
+
+    if (!map.getLayer(GPS_TRACK_CORRECTED_START_LAYER_ID)) {
+      map.addLayer({
+        id: GPS_TRACK_CORRECTED_START_LAYER_ID,
+        type: "circle",
+        source: GPS_TRACK_SOURCE_ID,
+        filter: ["==", ["get", "kind"], "corrected-start"],
+        paint: {
+          "circle-radius": 6,
+          "circle-color": "#2563eb",
           "circle-stroke-width": 3,
           "circle-stroke-color": "#0f1720",
         },
@@ -684,11 +734,18 @@ export default function GpsTestPage() {
     if (map.getLayer(GPS_TRACK_CORRECTED_POINT_LAYER_ID)) {
       map.setLayoutProperty(GPS_TRACK_CORRECTED_POINT_LAYER_ID, "visibility", correctedTrackVisible ? "visible" : "none");
     }
-    if (map.getLayer(GPS_TRACK_START_LAYER_ID)) {
+    if (map.getLayer(GPS_TRACK_RAW_START_LAYER_ID)) {
       map.setLayoutProperty(
-        GPS_TRACK_START_LAYER_ID,
+        GPS_TRACK_RAW_START_LAYER_ID,
         "visibility",
-        rawTrackVisible || correctedTrackVisible ? "visible" : "none",
+        rawTrackVisible ? "visible" : "none",
+      );
+    }
+    if (map.getLayer(GPS_TRACK_CORRECTED_START_LAYER_ID)) {
+      map.setLayoutProperty(
+        GPS_TRACK_CORRECTED_START_LAYER_ID,
+        "visibility",
+        correctedTrackVisible ? "visible" : "none",
       );
     }
   }
@@ -749,7 +806,7 @@ export default function GpsTestPage() {
   }
 
   function getPlaybackTotalCount() {
-    return Math.max(gpsTrackPayload?.raw?.length ?? 0, gpsTrackPayload?.corrected?.length ?? 0);
+    return getTrackPlaybackSteps(gpsTrackPayload).length;
   }
 
   function handleSelectSession(nextSessionId) {
