@@ -3,6 +3,8 @@ import GpsTestPanel from "../components/GpsTestPanel";
 import MapboxControlPanel from "../components/MapboxControlPanel";
 import MeasurePanel from "../components/MeasurePanel";
 import defaultBlockPatternUrl from "../assets/block-default.png";
+import yard1ImageUrl from "../assets/yard1.png";
+import yard2ImageUrl from "../assets/yard2.png";
 import {
   BLOCK_COLOR_PALETTE,
   DEFAULT_BEARING,
@@ -53,6 +55,59 @@ const GPS_TRACK_CORRECTED_LAYER_ID = "echotech-gps-track-corrected-layer";
 const GPS_TRACK_RAW_POINT_LAYER_ID = "echotech-gps-track-raw-point-layer";
 const GPS_TRACK_CORRECTED_POINT_LAYER_ID = "echotech-gps-track-corrected-point-layer";
 const GPS_TRACK_START_LAYER_ID = "echotech-gps-track-start-layer";
+const FIXED_IMAGE_OVERLAYS = [
+  {
+    sourceId: "yard-overlay-source-1",
+    layerId: "yard-overlay-layer-1",
+    name: "yard1",
+    imageSrc: yard2ImageUrl,
+    imageWidth: 287,
+    imageHeight: 617,
+    topLeft: [127.587497, 34.899847],
+    topRight: [127.590238, 34.901609],
+  },
+  {
+    sourceId: "yard-overlay-source-2",
+    layerId: "yard-overlay-layer-2",
+    name: "yard2",
+    imageSrc: yard1ImageUrl,
+    imageWidth: 2716,
+    imageHeight: 820,
+    topLeft: [127.590823, 34.901561],
+    topRight: [127.601082, 34.908128],
+  },
+];
+
+function createFixedImageCoordinates(topLeft, topRight, imageWidth, imageHeight) {
+  if (!topLeft || !topRight || !Number.isFinite(imageWidth) || !Number.isFinite(imageHeight) || imageWidth <= 0 || imageHeight <= 0) {
+    return [];
+  }
+
+  const origin = { lng: topLeft[0], lat: topLeft[1] };
+  const topRightLocal = latLngToLocalMeters(topRight[1], topRight[0], origin);
+  const topWidthMeters = Math.hypot(topRightLocal.x, topRightLocal.y);
+  if (topWidthMeters <= 0) {
+    return [];
+  }
+
+  const heightMeters = topWidthMeters * (imageHeight / imageWidth);
+  const unitX = topRightLocal.x / topWidthMeters;
+  const unitY = topRightLocal.y / topWidthMeters;
+
+  // Clockwise normal from the top edge so the image extends below that edge.
+  const downX = unitY * heightMeters;
+  const downY = -unitX * heightMeters;
+
+  const bottomLeft = localMetersToLatLng(downX, downY, origin);
+  const bottomRight = localMetersToLatLng(topRightLocal.x + downX, topRightLocal.y + downY, origin);
+
+  return [
+    topLeft,
+    topRight,
+    [bottomRight.lng, bottomRight.lat],
+    [bottomLeft.lng, bottomLeft.lat],
+  ];
+}
 
 function formatGpsSessionDate(value) {
   if (!value) {
@@ -260,6 +315,8 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
 
   const [gridVisible, setGridVisible] = useState(true);
   const [mapStyle, setMapStyle] = useState(DEFAULT_MAPBOX_STYLE);
+  const [fixedOverlayVisible, setFixedOverlayVisible] = useState(true);
+  const [fixedOverlayOpacity, setFixedOverlayOpacity] = useState("1");
   const [rotationDeg, setRotationDeg] = useState(DEFAULT_GRID_ROTATION);
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(DEFAULT_GRID_OFFSET_Y);
@@ -481,6 +538,21 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+
+    const clampedOpacity = Math.min(1, Math.max(0, Number(fixedOverlayOpacity)));
+    FIXED_IMAGE_OVERLAYS.forEach((overlay) => {
+      if (map.getLayer(overlay.layerId)) {
+        map.setLayoutProperty(overlay.layerId, "visibility", fixedOverlayVisible ? "visible" : "none");
+        map.setPaintProperty(overlay.layerId, "raster-opacity", clampedOpacity);
+      }
+    });
+  }, [fixedOverlayVisible, fixedOverlayOpacity]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     const styleUrl = MAPBOX_STYLES[mapStyle]?.url;
     if (!map || !styleUrl) {
       return;
@@ -531,7 +603,8 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
         gpsHoverPopupRef.current = new mapboxgl.Popup({
           closeButton: false,
           closeOnClick: false,
-          offset: 14,
+          anchor: "left",
+          offset: 18,
         });
 
         mapRef.current = map;
@@ -554,6 +627,7 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
           }
           applyKoreanLabels(map);
           ensureGridLayer(map);
+          ensureFixedImageOverlayLayers(map);
           ensureMeasurementLayers(map);
           ensureGpsTrackLayers(map);
           syncStatus();
@@ -588,8 +662,6 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
         map.on("mouseup", handleMeasureDragEnd);
         map.on("mouseenter", GPS_TRACK_RAW_POINT_LAYER_ID, handleGpsTrackPointMouseEnter);
         map.on("mouseenter", GPS_TRACK_CORRECTED_POINT_LAYER_ID, handleGpsTrackPointMouseEnter);
-        map.on("mousemove", GPS_TRACK_RAW_POINT_LAYER_ID, handleGpsTrackPointMouseMove);
-        map.on("mousemove", GPS_TRACK_CORRECTED_POINT_LAYER_ID, handleGpsTrackPointMouseMove);
         map.on("mouseleave", GPS_TRACK_RAW_POINT_LAYER_ID, handleGpsTrackPointMouseLeave);
         map.on("mouseleave", GPS_TRACK_CORRECTED_POINT_LAYER_ID, handleGpsTrackPointMouseLeave);
       })
@@ -743,6 +815,43 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
     }
   }
 
+  function ensureFixedImageOverlayLayers(map) {
+    FIXED_IMAGE_OVERLAYS.forEach((overlay) => {
+      const coordinates = createFixedImageCoordinates(
+        overlay.topLeft,
+        overlay.topRight,
+        overlay.imageWidth,
+        overlay.imageHeight,
+      );
+      if (coordinates.length !== 4) {
+        return;
+      }
+
+      if (!map.getSource(overlay.sourceId)) {
+        map.addSource(overlay.sourceId, {
+          type: "image",
+          url: overlay.imageSrc,
+          coordinates,
+        });
+      }
+
+      if (!map.getLayer(overlay.layerId)) {
+        map.addLayer({
+          id: overlay.layerId,
+          type: "raster",
+          source: overlay.sourceId,
+          paint: {
+            "raster-opacity": Math.min(1, Math.max(0, Number(fixedOverlayOpacity))),
+            "raster-fade-duration": 0,
+          },
+          layout: {
+            visibility: fixedOverlayVisible ? "visible" : "none",
+          },
+        });
+      }
+    });
+  }
+
   function syncGpsTrackLayers() {
     const map = mapRef.current;
     const gpsTrackSource = map?.getSource(GPS_TRACK_SOURCE_ID);
@@ -772,6 +881,14 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
     `;
   }
 
+  function buildCoordinateTooltipHtml(lngLat) {
+    return `
+      <div class="gps-track-tooltip">
+        <div>${lngLat.lng.toFixed(6)}, ${lngLat.lat.toFixed(6)}</div>
+      </div>
+    `;
+  }
+
   function handleGpsTrackPointMouseEnter(event) {
     const map = mapRef.current;
     if (!map) {
@@ -779,10 +896,9 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
     }
 
     map.getCanvas().style.cursor = "pointer";
-    handleGpsTrackPointMouseMove(event);
   }
 
-  function handleGpsTrackPointMouseMove(event) {
+  function handleGpsTrackPointClick(event) {
     const popup = gpsHoverPopupRef.current;
     const map = mapRef.current;
     const feature = event.features?.[0];
@@ -793,13 +909,22 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
     popup.setLngLat(event.lngLat).setHTML(buildGpsTrackTooltipHtml(feature)).addTo(map);
   }
 
+  function showCoordinatePopup(lngLat) {
+    const popup = gpsHoverPopupRef.current;
+    const map = mapRef.current;
+    if (!popup || !map || !lngLat) {
+      return;
+    }
+
+    popup.setLngLat(lngLat).setHTML(buildCoordinateTooltipHtml(lngLat)).addTo(map);
+  }
+
   function handleGpsTrackPointMouseLeave() {
     const map = mapRef.current;
     if (map) {
       map.getCanvas().style.cursor = "";
     }
 
-    gpsHoverPopupRef.current?.remove();
   }
 
   function syncOverlayNameMarkers() {
@@ -1710,8 +1835,26 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
 
     const { mode, points } = measureRef.current;
     if (mode === MEASURE_MODES.none) {
+      const gpsFeature = mapRef.current
+        ?.queryRenderedFeatures(event.point, {
+          layers: [GPS_TRACK_RAW_POINT_LAYER_ID, GPS_TRACK_CORRECTED_POINT_LAYER_ID],
+        })
+        ?.at(0);
+      if (gpsFeature) {
+        const coordinates = gpsFeature.geometry?.coordinates;
+        if (Array.isArray(coordinates) && coordinates.length >= 2) {
+          handleGpsTrackPointClick({
+            ...event,
+            lngLat: { lng: coordinates[0], lat: coordinates[1] },
+            features: [gpsFeature],
+          });
+          return;
+        }
+      }
+
       const selection = getOverlaySelectionAtPoint(event);
       setSelectedShape(selection);
+      showCoordinatePopup(event.lngLat);
       return;
     }
 
@@ -1997,16 +2140,6 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
     });
   }
 
-  function setOriginToCenter() {
-    const map = mapRef.current;
-    if (!map) {
-      return;
-    }
-
-    const mapCenter = map.getCenter();
-    setOrigin({ lat: mapCenter.lat, lng: mapCenter.lng });
-  }
-
   function resetGridOffset() {
     setOffsetX(0);
     setOffsetY(DEFAULT_GRID_OFFSET_Y);
@@ -2053,6 +2186,10 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
           mapStyle={mapStyle}
           setMapStyle={setMapStyle}
           mapStyleOptions={mapStyleOptions}
+          fixedOverlayVisible={fixedOverlayVisible}
+          setFixedOverlayVisible={setFixedOverlayVisible}
+          fixedOverlayOpacity={fixedOverlayOpacity}
+          setFixedOverlayOpacity={setFixedOverlayOpacity}
           gridVisible={gridVisible}
           setGridVisible={setGridVisible}
           rotationDeg={rotationDeg}
@@ -2064,7 +2201,7 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
           bearing={bearing}
           setMapBearing={setMapBearing}
           spinCamera={spinCamera}
-          setOriginToCenter={setOriginToCenter}
+          setOrigin={setOrigin}
           resetGridOffset={resetGridOffset}
           resetCamera={resetCamera}
           center={center}

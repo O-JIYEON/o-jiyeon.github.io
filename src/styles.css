@@ -309,6 +309,10 @@ body {
   font-weight: 600;
 }
 
+.field-label--updated {
+  color: #ff5a5a !important;
+}
+
 .field input,
 .field select {
   width: 100%;

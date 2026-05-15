@@ -13,10 +13,10 @@ const ROUTES = {
 function getRouteFromHash() {
   const rawHash = window.location.hash.replace(/^#/, "").trim();
   if (!rawHash) {
-    return ROUTES.gpsTest;
+    return ROUTES.mapbox;
   }
 
-  return Object.values(ROUTES).includes(rawHash) ? rawHash : ROUTES.gpsTest;
+  return Object.values(ROUTES).includes(rawHash) ? rawHash : ROUTES.mapbox;
 }
 
 function navigateTo(route) {

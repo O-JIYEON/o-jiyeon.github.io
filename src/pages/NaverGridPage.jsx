@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 const NAVER_MAP_KEY_ID = "s31twgmyf4";
+const GPS_TRACKS_URL = "https://api-playground.musma.net/gps/sessions/2f91bd66-e1ce-4ad0-aaa0-315ee93b8834/tracks";
 const DEFAULT_CENTER = { lat: 34.903349, lng: 127.596771 };
 const METERS_PER_DEGREE_LAT = 111320;
 const MAX_GRID_RENDER_LINES = 500;
@@ -111,6 +112,7 @@ export default function NaverGridPage({ onBack }) {
   const mapRef = useRef(null);
   const mapEventsRef = useRef([]);
   const gridLinesRef = useRef([]);
+  const trackLinesRef = useRef([]);
   const rafRef = useRef(0);
   const drawStateRef = useRef({
     gridWidth: 50,
@@ -130,6 +132,7 @@ export default function NaverGridPage({ onBack }) {
   const [zoomLevel, setZoomLevel] = useState("-");
   const [renderCount, setRenderCount] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
+  const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
     drawStateRef.current = {
@@ -174,6 +177,7 @@ export default function NaverGridPage({ onBack }) {
           naver.maps.Event.addListener(map, "dragend", onMapChanged),
         ];
 
+        setMapReady(true);
         scheduleDraw();
       })
       .catch(() => {
@@ -189,12 +193,14 @@ export default function NaverGridPage({ onBack }) {
       cancelled = true;
       cancelAnimationFrame(rafRef.current);
       clearGridLines();
+      clearTrackLines();
       mapEventsRef.current.forEach((listener) => {
         if (listener) {
           window.naver?.maps?.Event.removeListener(listener);
         }
       });
       mapEventsRef.current = [];
+      setMapReady(false);
     };
   }, []);
 
@@ -224,6 +230,95 @@ export default function NaverGridPage({ onBack }) {
     scheduleDraw();
   }, [gridWidth, gridHeight, gridVisible, origin, rotationDeg]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    const naver = window.naver;
+    if (!mapReady || !map || !naver?.maps) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    fetch(GPS_TRACKS_URL)
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`트랙 조회 실패 (${response.status})`);
+        }
+        return response.json();
+      })
+      .then((payload) => {
+        if (cancelled) {
+          return;
+        }
+
+        clearTrackLines();
+
+        const rawPath = Array.isArray(payload?.raw)
+          ? payload.raw
+              .filter((point) => point?.lat != null && point?.lng != null)
+              .map((point) => new naver.maps.LatLng(point.lat, point.lng))
+          : [];
+
+        const correctedPath = Array.isArray(payload?.corrected)
+          ? payload.corrected
+              .filter((point) => point?.lat != null && point?.lng != null)
+              .map((point) => new naver.maps.LatLng(point.lat, point.lng))
+          : [];
+
+        if (rawPath.length > 1) {
+          trackLinesRef.current.push(
+            new naver.maps.Polyline({
+              map,
+              path: rawPath,
+              strokeColor: "#ef4444",
+              strokeWeight: 4,
+              strokeOpacity: 0.9,
+              strokeStyle: "shortdash",
+              clickable: false,
+              zIndex: 1800,
+            }),
+          );
+        }
+
+        if (correctedPath.length > 1) {
+          trackLinesRef.current.push(
+            new naver.maps.Polyline({
+              map,
+              path: correctedPath,
+              strokeColor: "#2563eb",
+              strokeWeight: 5,
+              strokeOpacity: 0.95,
+              clickable: false,
+              zIndex: 1801,
+            }),
+          );
+        }
+
+        const fitPath = correctedPath.length > 0 ? correctedPath : rawPath;
+        if (fitPath.length > 0) {
+          const bounds = new naver.maps.LatLngBounds(fitPath[0], fitPath[0]);
+          fitPath.forEach((latLng) => bounds.extend(latLng));
+          map.fitBounds(bounds, {
+            top: 40,
+            right: 40,
+            bottom: 40,
+            left: 40,
+          });
+        }
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        setErrorMessage(error instanceof Error ? error.message : "트랙 경로를 불러오지 못했습니다.");
+      });
+
+    return () => {
+      cancelled = true;
+      clearTrackLines();
+    };
+  }, [mapReady]);
+
   function scheduleDraw() {
     cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(drawGrid);
@@ -232,6 +327,11 @@ export default function NaverGridPage({ onBack }) {
   function clearGridLines() {
     gridLinesRef.current.forEach((line) => line.setMap(null));
     gridLinesRef.current = [];
+  }
+
+  function clearTrackLines() {
+    trackLinesRef.current.forEach((line) => line.setMap(null));
+    trackLinesRef.current = [];
   }
 
   function drawGrid() {

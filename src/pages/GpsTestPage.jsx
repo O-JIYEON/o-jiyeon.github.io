@@ -515,7 +515,8 @@ export default function GpsTestPage() {
         gpsHoverPopupRef.current = new mapboxgl.Popup({
           closeButton: false,
           closeOnClick: false,
-          offset: 14,
+          anchor: "left",
+          offset: 18,
         });
 
         mapRef.current = map;
@@ -533,13 +534,12 @@ export default function GpsTestPage() {
 
         map.on("load", handleStyleLoad);
         map.on("style.load", handleStyleLoad);
+        map.on("click", handleMapCoordinateClick);
         map.on("move", scheduleGridDraw);
         map.on("rotate", scheduleGridDraw);
         map.on("zoom", scheduleGridDraw);
         map.on("mouseenter", GPS_TRACK_RAW_POINT_LAYER_ID, handleGpsTrackPointMouseEnter);
         map.on("mouseenter", GPS_TRACK_CORRECTED_POINT_LAYER_ID, handleGpsTrackPointMouseEnter);
-        map.on("mousemove", GPS_TRACK_RAW_POINT_LAYER_ID, handleGpsTrackPointMouseMove);
-        map.on("mousemove", GPS_TRACK_CORRECTED_POINT_LAYER_ID, handleGpsTrackPointMouseMove);
         map.on("mouseleave", GPS_TRACK_RAW_POINT_LAYER_ID, handleGpsTrackPointMouseLeave);
         map.on("mouseleave", GPS_TRACK_CORRECTED_POINT_LAYER_ID, handleGpsTrackPointMouseLeave);
       })
@@ -768,6 +768,15 @@ export default function GpsTestPage() {
     `;
   }
 
+  function buildCoordinateTooltipHtml(lngLat) {
+    return `
+      <div class="gps-track-tooltip">
+        <div><strong>위도</strong>${lngLat.lat.toFixed(6)}</div>
+        <div><strong>경도</strong>${lngLat.lng.toFixed(6)}</div>
+      </div>
+    `;
+  }
+
   function handleGpsTrackPointMouseEnter(event) {
     const map = mapRef.current;
     if (!map) {
@@ -775,10 +784,9 @@ export default function GpsTestPage() {
     }
 
     map.getCanvas().style.cursor = "pointer";
-    handleGpsTrackPointMouseMove(event);
   }
 
-  function handleGpsTrackPointMouseMove(event) {
+  function handleGpsTrackPointClick(event) {
     const popup = gpsHoverPopupRef.current;
     const map = mapRef.current;
     const feature = event.features?.[0];
@@ -789,11 +797,33 @@ export default function GpsTestPage() {
     popup.setLngLat(event.lngLat).setHTML(buildGpsTrackTooltipHtml(feature)).addTo(map);
   }
 
+  function handleMapCoordinateClick(event) {
+    const popup = gpsHoverPopupRef.current;
+    const map = mapRef.current;
+    if (!popup || !map || !event.lngLat) {
+      return;
+    }
+
+    const gpsFeature = map.queryRenderedFeatures(event.point, {
+      layers: [GPS_TRACK_RAW_POINT_LAYER_ID, GPS_TRACK_CORRECTED_POINT_LAYER_ID],
+    })?.[0];
+
+    if (gpsFeature) {
+      handleGpsTrackPointClick({
+        ...event,
+        lngLat: { lng: gpsFeature.geometry.coordinates[0], lat: gpsFeature.geometry.coordinates[1] },
+        features: [gpsFeature],
+      });
+      return;
+    }
+
+    popup.setLngLat(event.lngLat).setHTML(buildCoordinateTooltipHtml(event.lngLat)).addTo(map);
+  }
+
   function handleGpsTrackPointMouseLeave() {
     if (mapRef.current) {
       mapRef.current.getCanvas().style.cursor = "";
     }
-    gpsHoverPopupRef.current?.remove();
   }
 
   function getPanelAwareOffset() {

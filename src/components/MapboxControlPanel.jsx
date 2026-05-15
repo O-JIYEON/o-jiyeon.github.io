@@ -1,8 +1,14 @@
+import { useEffect, useState } from "react";
+
 export default function MapboxControlPanel({
   onBack,
   mapStyle,
   setMapStyle,
   mapStyleOptions,
+  fixedOverlayVisible,
+  setFixedOverlayVisible,
+  fixedOverlayOpacity,
+  setFixedOverlayOpacity,
   gridVisible,
   setGridVisible,
   rotationDeg,
@@ -14,7 +20,7 @@ export default function MapboxControlPanel({
   bearing,
   setMapBearing,
   spinCamera,
-  setOriginToCenter,
+  setOrigin,
   resetGridOffset,
   resetCamera,
   center,
@@ -24,6 +30,24 @@ export default function MapboxControlPanel({
   renderCount,
   statusMessage,
 }) {
+  const [originLatInput, setOriginLatInput] = useState(origin.lat.toFixed(6));
+  const [originLngInput, setOriginLngInput] = useState(origin.lng.toFixed(6));
+
+  useEffect(() => {
+    setOriginLatInput(origin.lat.toFixed(6));
+    setOriginLngInput(origin.lng.toFixed(6));
+  }, [origin]);
+
+  function applyOriginInput() {
+    const nextLat = Number(originLatInput);
+    const nextLng = Number(originLngInput);
+    if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) {
+      return;
+    }
+
+    setOrigin({ lat: nextLat, lng: nextLng });
+  }
+
   return (
     <aside className="control-panel control-panel--mapbox">
       <button className="back-button" type="button" aria-label="뒤로" onClick={onBack}>
@@ -49,6 +73,23 @@ export default function MapboxControlPanel({
           <input type="checkbox" checked={gridVisible} onChange={(event) => setGridVisible(event.target.checked)} />
         </label>
 
+        <label className="toggle-row">
+          <span className="field-label--updated">도면 레이어 표시</span>
+          <input type="checkbox" checked={fixedOverlayVisible} onChange={(event) => setFixedOverlayVisible(event.target.checked)} />
+        </label>
+
+        <label className="field">
+          <span className="field-label--updated">도면 Opacity({fixedOverlayOpacity})</span>
+          <input
+            type="number"
+            min="0"
+            max="1"
+            step="0.1"
+            value={fixedOverlayOpacity}
+            onChange={(event) => setFixedOverlayOpacity(event.target.value)}
+          />
+        </label>
+
         <label className="field">
           <span>격자 회전({rotationDeg}deg)</span>
           <input type="number" min="-180" max="180" step="1" value={rotationDeg} onChange={(event) => setRotationDeg(Number(event.target.value))} />
@@ -69,25 +110,19 @@ export default function MapboxControlPanel({
           <input type="number" min="-180" max="180" step="1" value={bearing} onChange={(event) => setMapBearing(Number(event.target.value))} />
         </label>
 
-        <p className="rotation-hint">
-          지도와 격자 값은 숫자로 직접 입력할 수 있고, 지도는 우클릭 드래그로 rotation만 직접 조정할 수 있습니다. 틸트는 0deg로 고정됩니다.
-        </p>
+        <label className="field">
+          <span className="field-label--updated">원점 위도</span>
+          <input type="number" step="0.000001" value={originLatInput} onChange={(event) => setOriginLatInput(event.target.value)} />
+        </label>
+
+        <label className="field">
+          <span className="field-label--updated">원점 경도</span>
+          <input type="number" step="0.000001" value={originLngInput} onChange={(event) => setOriginLngInput(event.target.value)} />
+        </label>
 
         <div className="button-row">
-          <button type="button" onClick={() => spinCamera(-30)}>
-            좌로 30deg
-          </button>
-          <button type="button" onClick={() => spinCamera(30)}>
-            우로 30deg
-          </button>
-          <button type="button" onClick={setOriginToCenter}>
-            현재 중심을 원점으로
-          </button>
-          <button type="button" onClick={resetGridOffset}>
-            오프셋 초기화
-          </button>
-          <button type="button" onClick={resetCamera}>
-            카메라 초기화
+          <button type="button" onClick={applyOriginInput}>
+            원점 적용
           </button>
         </div>
       </section>
@@ -113,17 +148,17 @@ export default function MapboxControlPanel({
           <dt>Pitch</dt>
           <dd>{pitch}deg</dd>
         </div>
-        <div>
-          <dt>렌더 선 수</dt>
-          <dd>{renderCount}</dd>
-        </div>
-        <div>
-          <dt>격자 오프셋</dt>
-          <dd>{`${offsetX}m, ${offsetY}m`}</dd>
-        </div>
+        {/*<div>*/}
+        {/*  <dt>렌더 선 수</dt>*/}
+        {/*  <dd>{renderCount}</dd>*/}
+        {/*</div>*/}
+        {/*<div>*/}
+        {/*  <dt>격자 오프셋</dt>*/}
+        {/*  <dd>{`${offsetX}m, ${offsetY}m`}</dd>*/}
+        {/*</div>*/}
       </dl>
 
-      <p className="mapbox-status">{statusMessage}</p>
+      {/*<p className="mapbox-status">{statusMessage}</p>*/}
     </aside>
   );
 }
