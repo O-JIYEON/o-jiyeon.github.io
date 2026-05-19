@@ -61,56 +61,44 @@ const FIXED_IMAGE_OVERLAYS = [
     layerId: "yard-overlay-layer-1",
     name: "yard1",
     imageSrc: yard2ImageUrl,
-    imageWidth: 287,
-    imageHeight: 617,
-    topLeft: [127.587497, 34.899847],
-    topRight: [127.590238, 34.901609],
+    coordinates: [
+      [127.587585, 34.899842],
+      [127.590244, 34.901574],
+      [127.594853, 34.896818],
+      [127.592158, 34.895121],
+    ],
   },
   {
     sourceId: "yard-overlay-source-2",
     layerId: "yard-overlay-layer-2",
     name: "yard2",
     imageSrc: yard1ImageUrl,
-    imageWidth: 2716,
-    imageHeight: 820,
-    topLeft: [127.590721, 34.901550],
-    topRight: [127.601048, 34.908171],
+    coordinates: [
+      [127.590772, 34.901531],
+      [127.601043, 34.90818],
+      [127.603523, 34.905675],
+      [127.593202, 34.899038],
+    ],
   },
 ];
 
-function createFixedImageCoordinates(topLeft, topRight, imageWidth, imageHeight) {
-  if (!topLeft || !topRight || !Number.isFinite(imageWidth) || !Number.isFinite(imageHeight) || imageWidth <= 0 || imageHeight <= 0) {
+function cloneFixedImageOverlays() {
+  return FIXED_IMAGE_OVERLAYS.map((overlay) => ({
+    ...overlay,
+    coordinates: createInitialFixedImageCoordinates(overlay),
+  }));
+}
+
+function createInitialFixedImageCoordinates({ coordinates }) {
+  if (!Array.isArray(coordinates) || coordinates.length !== 4) {
     return [];
   }
 
-  const origin = { lng: topLeft[0], lat: topLeft[1] };
-  const topRightLocal = latLngToLocalMeters(topRight[1], topRight[0], origin);
-  const topWidthMeters = Math.hypot(topRightLocal.x, topRightLocal.y);
-  if (topWidthMeters <= 0) {
-    return [];
-  }
-
-  const heightMeters = topWidthMeters * (imageHeight / imageWidth);
-  const unitX = topRightLocal.x / topWidthMeters;
-  const unitY = topRightLocal.y / topWidthMeters;
-
-  // Clockwise normal from the top edge so the image extends below that edge.
-  const downX = unitY * heightMeters;
-  const downY = -unitX * heightMeters;
-
-  const bottomLeft = localMetersToLatLng(downX, downY, origin);
-  const bottomRight = localMetersToLatLng(topRightLocal.x + downX, topRightLocal.y + downY, origin);
-
-  return [
-    topLeft,
-    topRight,
-    [bottomRight.lng, bottomRight.lat],
-    [bottomLeft.lng, bottomLeft.lat],
-  ];
+  return coordinates.map((coordinate) => [...coordinate]);
 }
 
 function getFixedOverlayCoordinates(overlay) {
-  return createFixedImageCoordinates(overlay.topLeft, overlay.topRight, overlay.imageWidth, overlay.imageHeight);
+  return Array.isArray(overlay.coordinates) ? overlay.coordinates : [];
 }
 
 function formatGpsSessionDate(value) {
@@ -285,6 +273,12 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
   const overlayNameMarkersRef = useRef([]);
   const blockImageMarkersRef = useRef([]);
   const blockRotateHandleRef = useRef(null);
+  const fixedOverlayCornerMarkersRef = useRef([]);
+  const fixedOverlaysRef = useRef(cloneFixedImageOverlays());
+  const fixedOverlayRafRef = useRef(0);
+  const pendingFixedOverlaySourceIdsRef = useRef(new Set());
+  const fixedOverlayToastTimerRef = useRef(0);
+  const fixedOverlayMarkerDragSuppressUntilRef = useRef(0);
   const measurePanelRef = useRef(null);
   const gpsTrackGeoJsonRef = useRef(createEmptyFeatureCollection());
   const rafRef = useRef(0);
@@ -321,6 +315,7 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
   const [mapStyle, setMapStyle] = useState(DEFAULT_MAPBOX_STYLE);
   const [fixedOverlayVisible, setFixedOverlayVisible] = useState(true);
   const [fixedOverlayOpacity, setFixedOverlayOpacity] = useState("1");
+  const [fixedOverlays, setFixedOverlays] = useState(() => cloneFixedImageOverlays());
   const [rotationDeg, setRotationDeg] = useState(DEFAULT_GRID_ROTATION);
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(DEFAULT_GRID_OFFSET_Y);
@@ -350,11 +345,19 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
   const [gpsTrackError, setGpsTrackError] = useState("");
   const [gpsTrackSummary, setGpsTrackSummary] = useState(null);
   const [gpsSessionsRefreshToken, setGpsSessionsRefreshToken] = useState(0);
+  const [fixedOverlayToastMessage, setFixedOverlayToastMessage] = useState("");
   const mapStyleOptions = Object.entries(MAPBOX_STYLES).map(([value, option]) => ({
     value,
     label: option.label,
   }));
   const isGpsTestMode = mode === "gps-test";
+
+  useEffect(() => {
+    fixedOverlaysRef.current = fixedOverlays.map((overlay) => ({
+      ...overlay,
+      coordinates: getFixedOverlayCoordinates(overlay).map((coordinate) => [...coordinate]),
+    }));
+  }, [fixedOverlays]);
 
   useEffect(() => {
     if (!isGpsTestMode) {
@@ -547,13 +550,18 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
     }
 
     const clampedOpacity = Math.min(1, Math.max(0, Number(fixedOverlayOpacity)));
-    FIXED_IMAGE_OVERLAYS.forEach((overlay) => {
+    fixedOverlays.forEach((overlay) => {
       if (map.getLayer(overlay.layerId)) {
         map.setLayoutProperty(overlay.layerId, "visibility", fixedOverlayVisible ? "visible" : "none");
         map.setPaintProperty(overlay.layerId, "raster-opacity", clampedOpacity);
       }
     });
-  }, [fixedOverlayVisible, fixedOverlayOpacity]);
+  }, [fixedOverlays, fixedOverlayVisible, fixedOverlayOpacity]);
+
+  useEffect(() => {
+    syncFixedOverlaySources();
+    syncFixedOverlayCornerMarkers();
+  }, [fixedOverlays, fixedOverlayVisible, fixedOverlayOpacity]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -638,6 +646,8 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
           scheduleGridDraw();
           syncMeasurementOverlay();
           syncGpsTrackLayers();
+          syncFixedOverlaySources();
+          syncFixedOverlayCornerMarkers();
           syncOverlayNameMarkers();
           syncBlockImageMarkers();
           syncBlockRotateHandle();
@@ -685,6 +695,11 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
       blockImageMarkersRef.current = [];
       blockRotateHandleRef.current?.remove();
       blockRotateHandleRef.current = null;
+      fixedOverlayCornerMarkersRef.current.forEach((item) => item.marker.remove());
+      fixedOverlayCornerMarkersRef.current = [];
+      cancelAnimationFrame(fixedOverlayRafRef.current);
+      pendingFixedOverlaySourceIdsRef.current.clear();
+      window.clearTimeout(fixedOverlayToastTimerRef.current);
       gpsHoverPopupRef.current?.remove();
       gpsHoverPopupRef.current = null;
       markerRef.current?.remove();
@@ -820,7 +835,7 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
   }
 
   function ensureFixedImageOverlayLayers(map) {
-    FIXED_IMAGE_OVERLAYS.forEach((overlay) => {
+    fixedOverlaysRef.current.forEach((overlay) => {
       const coordinates = getFixedOverlayCoordinates(overlay);
       if (coordinates.length !== 4) {
         return;
@@ -849,6 +864,166 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
         });
       }
     });
+  }
+
+  function syncFixedOverlaySources() {
+    fixedOverlaysRef.current.forEach((overlay) => {
+      syncFixedOverlaySourceById(overlay.sourceId, overlay);
+    });
+  }
+
+  function syncFixedOverlaySourceById(sourceId, overlayCandidate = null) {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+
+    const overlay = overlayCandidate ?? fixedOverlaysRef.current.find((item) => item.sourceId === sourceId);
+    if (!overlay) {
+      return;
+    }
+
+    const coordinates = getFixedOverlayCoordinates(overlay);
+    if (coordinates.length !== 4) {
+      return;
+    }
+
+    const source = map.getSource(overlay.sourceId);
+    if (source?.setCoordinates) {
+      source.setCoordinates(coordinates);
+    }
+
+    if (map.getLayer(overlay.layerId)) {
+      map.setLayoutProperty(overlay.layerId, "visibility", fixedOverlayVisible ? "visible" : "none");
+      map.setPaintProperty(overlay.layerId, "raster-opacity", Math.min(1, Math.max(0, Number(fixedOverlayOpacity))));
+    }
+  }
+
+  function scheduleFixedOverlaySourceSync(sourceId) {
+    pendingFixedOverlaySourceIdsRef.current.add(sourceId);
+    if (fixedOverlayRafRef.current) {
+      return;
+    }
+
+    fixedOverlayRafRef.current = requestAnimationFrame(() => {
+      fixedOverlayRafRef.current = 0;
+      const sourceIds = [...pendingFixedOverlaySourceIdsRef.current];
+      pendingFixedOverlaySourceIdsRef.current.clear();
+      sourceIds.forEach((nextSourceId) => syncFixedOverlaySourceById(nextSourceId));
+    });
+  }
+
+  function syncFixedOverlayCornerMarkers() {
+    const map = mapRef.current;
+    const mapboxgl = mapboxGlRef.current;
+
+    if (!map || !mapboxgl || isGpsTestMode) {
+      fixedOverlayCornerMarkersRef.current.forEach((item) => item.marker.remove());
+      fixedOverlayCornerMarkersRef.current = [];
+      return;
+    }
+
+    const markerEntries = [];
+
+    fixedOverlaysRef.current.forEach((overlay, overlayIndex) => {
+      getFixedOverlayCoordinates(overlay)
+        .filter((coordinate) => Array.isArray(coordinate) && coordinate.length === 2)
+        .forEach((coordinate, cornerIndex) => {
+          const existing = fixedOverlayCornerMarkersRef.current.find(
+            (item) => item.sourceId === overlay.sourceId && item.cornerIndex === cornerIndex,
+          );
+
+          const marker =
+            existing?.marker ??
+            new mapboxgl.Marker({
+              color: overlayIndex === 0 ? "#f97316" : "#38bdf8",
+              scale: 0.9,
+              draggable: true,
+            })
+              .setLngLat(coordinate)
+              .addTo(map)
+              .on("drag", (event) => {
+                const nextLngLat = event.target.getLngLat();
+                patchFixedOverlayCorner(overlay.sourceId, cornerIndex, [nextLngLat.lng, nextLngLat.lat]);
+              })
+              .on("dragend", () => {
+                fixedOverlayMarkerDragSuppressUntilRef.current = Date.now() + 250;
+                commitFixedOverlayCoordinates();
+              });
+
+          if (!existing) {
+            marker.getElement().addEventListener("click", () => {
+              if (Date.now() < fixedOverlayMarkerDragSuppressUntilRef.current) {
+                return;
+              }
+              copyFixedOverlayCoordinate(overlay.sourceId, cornerIndex);
+            });
+          }
+
+          marker.setLngLat(coordinate);
+          markerEntries.push({
+            sourceId: overlay.sourceId,
+            cornerIndex,
+            marker,
+          });
+        });
+    });
+
+    fixedOverlayCornerMarkersRef.current.forEach((item) => {
+      if (!markerEntries.some((entry) => entry.sourceId === item.sourceId && entry.cornerIndex === item.cornerIndex)) {
+        item.marker.remove();
+      }
+    });
+
+    fixedOverlayCornerMarkersRef.current = markerEntries;
+  }
+
+  function patchFixedOverlayCorner(sourceId, cornerIndex, nextCoordinate) {
+    fixedOverlaysRef.current = fixedOverlaysRef.current.map((overlay) =>
+      overlay.sourceId === sourceId
+        ? {
+            ...overlay,
+            coordinates: getFixedOverlayCoordinates(overlay).map((coordinate, index) =>
+              index === cornerIndex ? [...nextCoordinate] : coordinate,
+            ),
+          }
+        : overlay,
+    );
+    scheduleFixedOverlaySourceSync(sourceId);
+  }
+
+  function commitFixedOverlayCoordinates() {
+    setFixedOverlays(
+      fixedOverlaysRef.current.map((overlay) => ({
+        ...overlay,
+        coordinates: getFixedOverlayCoordinates(overlay).map((coordinate) => [...coordinate]),
+      })),
+    );
+  }
+
+  async function copyFixedOverlayCoordinate(sourceId, cornerIndex) {
+    const overlay = fixedOverlaysRef.current.find((item) => item.sourceId === sourceId);
+    const coordinate = overlay ? getFixedOverlayCoordinates(overlay)[cornerIndex] : null;
+    if (!coordinate || coordinate.length !== 2) {
+      return;
+    }
+
+    const coordinateText = `${coordinate[0].toFixed(6)}, ${coordinate[1].toFixed(6)}`;
+
+    try {
+      await navigator.clipboard.writeText(coordinateText);
+      showFixedOverlayToast("좌표가 저장되었습니다");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? `클립보드 저장 실패: ${error.message}` : "클립보드 저장 실패");
+    }
+  }
+
+  function showFixedOverlayToast(message) {
+    setFixedOverlayToastMessage(message);
+    window.clearTimeout(fixedOverlayToastTimerRef.current);
+    fixedOverlayToastTimerRef.current = window.setTimeout(() => {
+      setFixedOverlayToastMessage("");
+    }, 1800);
   }
 
   function syncGpsTrackLayers() {
@@ -2114,7 +2289,7 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
       rotationDeg: currentRotationDeg,
       offsetX: currentOffsetX,
       offsetY: currentOffsetY,
-      maskPolygons: FIXED_IMAGE_OVERLAYS.map(getFixedOverlayCoordinates).filter((coordinates) => coordinates.length === 4),
+      maskPolygons: fixedOverlays.map(getFixedOverlayCoordinates).filter((coordinates) => coordinates.length === 4),
     });
 
     gridSource.setData(data);
@@ -2261,6 +2436,7 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
 
       <main ref={mapRootRef} className="map-root map-root--mapbox" aria-label="Mapbox 지도" />
 
+      {fixedOverlayToastMessage ? <div className="toast-banner">{fixedOverlayToastMessage}</div> : null}
       {errorMessage ? <div className="error-banner">{errorMessage}</div> : null}
     </div>
   );
