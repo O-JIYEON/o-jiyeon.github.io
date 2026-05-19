@@ -73,8 +73,8 @@ const FIXED_IMAGE_OVERLAYS = [
     imageSrc: yard1ImageUrl,
     imageWidth: 2716,
     imageHeight: 820,
-    topLeft: [127.590823, 34.901561],
-    topRight: [127.601082, 34.908128],
+    topLeft: [127.590721, 34.901550],
+    topRight: [127.601048, 34.908171],
   },
 ];
 
@@ -107,6 +107,10 @@ function createFixedImageCoordinates(topLeft, topRight, imageWidth, imageHeight)
     [bottomRight.lng, bottomRight.lat],
     [bottomLeft.lng, bottomLeft.lat],
   ];
+}
+
+function getFixedOverlayCoordinates(overlay) {
+  return createFixedImageCoordinates(overlay.topLeft, overlay.topRight, overlay.imageWidth, overlay.imageHeight);
 }
 
 function formatGpsSessionDate(value) {
@@ -817,12 +821,7 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
 
   function ensureFixedImageOverlayLayers(map) {
     FIXED_IMAGE_OVERLAYS.forEach((overlay) => {
-      const coordinates = createFixedImageCoordinates(
-        overlay.topLeft,
-        overlay.topRight,
-        overlay.imageWidth,
-        overlay.imageHeight,
-      );
+      const coordinates = getFixedOverlayCoordinates(overlay);
       if (coordinates.length !== 4) {
         return;
       }
@@ -2115,6 +2114,7 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
       rotationDeg: currentRotationDeg,
       offsetX: currentOffsetX,
       offsetY: currentOffsetY,
+      maskPolygons: FIXED_IMAGE_OVERLAYS.map(getFixedOverlayCoordinates).filter((coordinates) => coordinates.length === 4),
     });
 
     gridSource.setData(data);

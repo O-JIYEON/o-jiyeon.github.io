@@ -452,10 +452,12 @@ export function ensureMeasurementLayers(map) {
           ["boolean", ["get", "isSelected"], false],
           ["max", ["coalesce", ["get", "fillOpacity"], 0.18], 0.45],
           ["coalesce", ["get", "fillOpacity"], 0.18],
+          ['coalesce', ['get', 'fillopacity']]
         ],
       },
     });
   }
+
 
   if (!map.getLayer(MEASURE_LINE_LAYER_ID)) {
     map.addLayer({
