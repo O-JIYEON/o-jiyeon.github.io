@@ -18,6 +18,7 @@ import {
   GRID_BOUNDARY_ROTATION_DEG,
   FIXED_GRID_BOUNDARY_COORDINATES,
   DRAWING_SNAP_METERS,
+  GRID_LAYER_ID,
   GRID_SOURCE_ID,
   MAPBOX_STYLES,
   MEASURE_FILL_LAYER_ID,
@@ -941,7 +942,11 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
 
   useEffect(() => {
     syncFixedOverlaySources();
-    syncFixedOverlayCornerMarkers();
+    fixedOverlayCornerMarkersRef.current.forEach((item) => item.marker.remove());
+    fixedOverlayCornerMarkersRef.current = [];
+    // 도면 꼭짓점 편집 마커는 현재 비활성화한다.
+    // 필요하면 아래 호출을 다시 활성화하면 된다.
+    // syncFixedOverlayCornerMarkers();
   }, [fixedOverlays, fixedOverlayVisible, fixedOverlayOpacity]);
 
   useEffect(() => {
@@ -1033,7 +1038,9 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
           ensureGridSelectionLayer(map);
           syncGridBoundaryResizeMarker();
           syncFixedOverlaySources();
-          syncFixedOverlayCornerMarkers();
+          // 도면 꼭짓점 편집 마커는 현재 비활성화한다.
+          // 필요하면 아래 호출을 다시 활성화하면 된다.
+          // syncFixedOverlayCornerMarkers();
           syncOverlayNameMarkers();
           syncBlockImageMarkers();
           syncBlockRotateHandle();
@@ -1255,6 +1262,10 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
             visibility: fixedOverlayVisible ? "visible" : "none",
           },
         });
+      }
+
+      if (map.getLayer(overlay.layerId) && map.getLayer(GRID_LAYER_ID)) {
+        map.moveLayer(overlay.layerId, GRID_LAYER_ID);
       }
     });
   }
