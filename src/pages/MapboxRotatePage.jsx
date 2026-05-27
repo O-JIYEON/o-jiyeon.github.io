@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import GpsTestPanel from "../components/GpsTestPanel";
 import MapboxControlPanel from "../components/MapboxControlPanel";
 import MeasurePanel from "../components/MeasurePanel";
 import defaultBlockPatternUrl from "../assets/block-default.png";
@@ -51,13 +50,6 @@ import {
   polygonAreaSquareMeters,
 } from "../features/mapbox/measurementUtils";
 
-const GPS_API_BASE_URL = "https://api-playground.musma.net";
-const GPS_TRACK_SOURCE_ID = "echotech-gps-track-source";
-const GPS_TRACK_RAW_LAYER_ID = "echotech-gps-track-raw-layer";
-const GPS_TRACK_CORRECTED_LAYER_ID = "echotech-gps-track-corrected-layer";
-const GPS_TRACK_RAW_POINT_LAYER_ID = "echotech-gps-track-raw-point-layer";
-const GPS_TRACK_CORRECTED_POINT_LAYER_ID = "echotech-gps-track-corrected-point-layer";
-const GPS_TRACK_START_LAYER_ID = "echotech-gps-track-start-layer";
 const GRID_BOUNDARY_EDITOR_SOURCE_ID = "echotech-grid-boundary-editor-source";
 const GRID_BOUNDARY_EDITOR_FILL_LAYER_ID = "echotech-grid-boundary-editor-fill-layer";
 const GRID_BOUNDARY_EDITOR_LINE_LAYER_ID = "echotech-grid-boundary-editor-line-layer";
@@ -457,175 +449,11 @@ function resizeGridBoundaryCoordinates(coordinates, targetCoordinate, origin, gr
   ].map((point) => [point.lng, point.lat]), origin);
 }
 
-function formatGpsSessionDate(value) {
-  if (!value) {
-    return "-";
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("ko-KR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(parsed);
-}
-
-function formatGpsMetric(value, suffix = "") {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) {
-    return "-";
-  }
-
-  return `${Number(value).toFixed(1)}${suffix}`;
-}
-
-function getGpsResultRows(summary) {
-  if (!summary) {
-    return [];
-  }
-
-  return [
-    {
-      label: "총 포인트 수",
-      before: summary.totalPoints ?? "-",
-      after: summary.totalPoints ?? "-",
-      effect: "-",
-    },
-    {
-      label: "이상 좌표 차단",
-      before: "-",
-      after: `${summary.rejectedPoints ?? 0}건`,
-      effect: "노이즈 제거",
-    },
-    {
-      label: "최대 위치 점프",
-      before: formatGpsMetric(summary.rawMaxJumpM, "m"),
-      after: formatGpsMetric(summary.correctedMaxJumpM, "m"),
-      effect: `${formatGpsMetric(summary.maxJumpReductionPercent, "%")} 감소`,
-    },
-    {
-      label: "평균 이동 흔들림",
-      before: formatGpsMetric(summary.rawAverageStepM, "m"),
-      after: formatGpsMetric(summary.correctedAverageStepM, "m"),
-      effect: `${formatGpsMetric(summary.averageStepReductionPercent, "%")} 감소`,
-    },
-    {
-      label: "평균 GPS 정확도",
-      before: formatGpsMetric(summary.rawAverageAccuracyM ?? summary.averageAccuracyM, "m"),
-      after: formatGpsMetric(summary.correctedAverageAccuracyM, "m"),
-      effect: "단말 측정 품질",
-    },
-  ];
-}
-
-function sortGpsSessions(list) {
-  return [...list].sort((a, b) => {
-    const left = new Date(b.startedAt ?? b.createdAt ?? 0).getTime();
-    const right = new Date(a.startedAt ?? a.createdAt ?? 0).getTime();
-    return left - right;
-  });
-}
-
-function createGpsTrackGeoJson(tracks) {
-  const rawCoordinates = Array.isArray(tracks?.raw) ? tracks.raw.map((point) => [point.lng, point.lat]) : [];
-  const correctedCoordinates = Array.isArray(tracks?.corrected) ? tracks.corrected.map((point) => [point.lng, point.lat]) : [];
-  const firstPoint = correctedCoordinates[0] ?? rawCoordinates[0] ?? null;
-  const features = [];
-
-  if (rawCoordinates.length > 1) {
-    features.push({
-      type: "Feature",
-      properties: { kind: "raw" },
-      geometry: {
-        type: "LineString",
-        coordinates: rawCoordinates,
-      },
-    });
-  }
-
-  if (correctedCoordinates.length > 1) {
-    features.push({
-      type: "Feature",
-      properties: { kind: "corrected" },
-      geometry: {
-        type: "LineString",
-        coordinates: correctedCoordinates,
-      },
-    });
-  }
-
-  if (firstPoint) {
-    features.push({
-      type: "Feature",
-      properties: { kind: "start" },
-      geometry: {
-        type: "Point",
-        coordinates: firstPoint,
-      },
-    });
-  }
-
-  if (Array.isArray(tracks?.raw)) {
-    tracks.raw.forEach((point) => {
-      features.push({
-        type: "Feature",
-        properties: {
-          kind: "raw-point",
-          pointIndex: point.pointIndex,
-          recordedAt: point.recordedAt ?? "",
-          savedAt: point.savedAt ?? "",
-          lat: point.lat,
-          lng: point.lng,
-          accuracy: point.accuracy,
-        },
-        geometry: {
-          type: "Point",
-          coordinates: [point.lng, point.lat],
-        },
-      });
-    });
-  }
-
-  if (Array.isArray(tracks?.corrected)) {
-    tracks.corrected.forEach((point) => {
-      features.push({
-        type: "Feature",
-        properties: {
-          kind: "corrected-point",
-          pointIndex: point.pointIndex,
-          status: point.status,
-          recordedAt: point.recordedAt ?? "",
-          savedAt: point.savedAt ?? "",
-          lat: point.lat,
-          lng: point.lng,
-          accuracy: point.accuracy,
-        },
-        geometry: {
-          type: "Point",
-          coordinates: [point.lng, point.lat],
-        },
-      });
-    });
-  }
-
-  return {
-    type: "FeatureCollection",
-    features,
-  };
-}
-
-export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
+export default function MapboxRotatePage({ onBack }) {
   const mapRootRef = useRef(null);
   const mapRef = useRef(null);
   const mapboxGlRef = useRef(null);
   const markerRef = useRef(null);
-  const gpsHoverPopupRef = useRef(null);
   const overlayNameMarkersRef = useRef([]);
   const blockImageMarkersRef = useRef([]);
   const blockRotateHandleRef = useRef(null);
@@ -638,7 +466,6 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
   const gridBoundaryResizeMarkerRef = useRef(null);
   const gridBoundaryDragStateRef = useRef(null);
   const measurePanelRef = useRef(null);
-  const gpsTrackGeoJsonRef = useRef(createEmptyFeatureCollection());
   const rafRef = useRef(0);
   const measureIdRef = useRef(1);
   const measureNameRef = useRef({
@@ -699,21 +526,11 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
   const [blockVisible, setBlockVisible] = useState(true);
   const [defaultBlockImageSrc, setDefaultBlockImageSrc] = useState(defaultBlockPatternUrl);
   const [draftBlockColor, setDraftBlockColor] = useState(DEFAULT_BLOCK_COLOR);
-  const [gpsSessions, setGpsSessions] = useState([]);
-  const [gpsSessionsLoading, setGpsSessionsLoading] = useState(false);
-  const [gpsSessionsError, setGpsSessionsError] = useState("");
-  const [selectedGpsSessionId, setSelectedGpsSessionId] = useState("");
-  const [gpsTrackLoading, setGpsTrackLoading] = useState(false);
-  const [gpsTrackError, setGpsTrackError] = useState("");
-  const [gpsTrackSummary, setGpsTrackSummary] = useState(null);
-  const [gpsSessionsRefreshToken, setGpsSessionsRefreshToken] = useState(0);
   const [fixedOverlayToastMessage, setFixedOverlayToastMessage] = useState("");
   const mapStyleOptions = Object.entries(MAPBOX_STYLES).map(([value, option]) => ({
     value,
     label: option.label,
   }));
-  const isGpsTestMode = mode === "gps-test";
-
   useEffect(() => {
     fixedOverlaysRef.current = fixedOverlays.map((overlay) => ({
       ...overlay,
@@ -740,108 +557,6 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
       source.setData(createGridSelectionGeoJson(selectedGridCellCoordinatesRef.current));
     }
   }, [selectedGridCellCoordinates]);
-
-  useEffect(() => {
-    if (!isGpsTestMode) {
-      return undefined;
-    }
-
-    const controller = new AbortController();
-
-    setGpsSessionsLoading(true);
-    setGpsSessionsError("");
-
-    fetch(`${GPS_API_BASE_URL}/gps/sessions`, { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`세션 목록 조회 실패 (${response.status})`);
-        }
-
-        const payload = await response.json();
-        if (!Array.isArray(payload)) {
-          throw new Error("세션 목록 응답 형식이 올바르지 않습니다.");
-        }
-
-        const sortedPayload = sortGpsSessions(payload);
-        setGpsSessions(sortedPayload);
-        setSelectedGpsSessionId((current) =>
-          sortedPayload.some((session) => session.id === current) ? current : sortedPayload[0]?.id || "",
-        );
-      })
-      .catch((error) => {
-        if (error instanceof Error && error.name === "AbortError") {
-          return;
-        }
-        setGpsSessionsError(error instanceof Error ? error.message : "세션 목록을 불러오지 못했습니다.");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setGpsSessionsLoading(false);
-        }
-      });
-
-    return () => controller.abort();
-  }, [isGpsTestMode, gpsSessionsRefreshToken]);
-
-  useEffect(() => {
-    if (!isGpsTestMode || !selectedGpsSessionId) {
-      gpsTrackGeoJsonRef.current = createEmptyFeatureCollection();
-      setGpsTrackSummary(null);
-      setGpsTrackError("");
-      syncGpsTrackLayers();
-      return undefined;
-    }
-
-    const controller = new AbortController();
-
-    setGpsTrackLoading(true);
-    setGpsTrackError("");
-
-    Promise.all([
-      fetch(`${GPS_API_BASE_URL}/gps/sessions/${selectedGpsSessionId}/tracks`, { signal: controller.signal }),
-      fetch(`${GPS_API_BASE_URL}/gps/sessions/${selectedGpsSessionId}/summary`, { signal: controller.signal }),
-    ])
-      .then(async ([tracksResponse, summaryResponse]) => {
-        if (!tracksResponse.ok) {
-          throw new Error(`트래킹 경로 조회 실패 (${tracksResponse.status})`);
-        }
-        if (!summaryResponse.ok) {
-          throw new Error(`테스트 결과 조회 실패 (${summaryResponse.status})`);
-        }
-
-        const tracksPayload = await tracksResponse.json();
-        const summaryPayload = await summaryResponse.json();
-        gpsTrackGeoJsonRef.current = createGpsTrackGeoJson(tracksPayload);
-        setGpsTrackSummary(summaryPayload);
-        syncGpsTrackLayers();
-
-        const firstCoordinate = gpsTrackGeoJsonRef.current.features.find((feature) => feature.properties?.kind === "start")?.geometry?.coordinates;
-        if (Array.isArray(firstCoordinate) && firstCoordinate.length === 2) {
-          const map = mapRef.current;
-          map?.easeTo({
-            center: firstCoordinate,
-            zoom: 17,
-            duration: 900,
-          });
-        }
-      })
-      .catch((error) => {
-        if (error instanceof Error && error.name === "AbortError") {
-          return;
-        }
-        gpsTrackGeoJsonRef.current = createEmptyFeatureCollection();
-        setGpsTrackSummary(null);
-        setGpsTrackError(error instanceof Error ? error.message : "트래킹 결과를 불러오지 못했습니다.");
-        syncGpsTrackLayers();
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setGpsTrackLoading(false);
-        }
-      });
-
-    return () => controller.abort();
-  }, [isGpsTestMode, selectedGpsSessionId]);
 
   useEffect(() => {
     measureRef.current.mode = measureMode;
@@ -994,13 +709,6 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
         map.touchZoomRotate.disableRotation();
         map.keyboard.enable();
 
-        gpsHoverPopupRef.current = new mapboxgl.Popup({
-          closeButton: false,
-          closeOnClick: false,
-          anchor: "left",
-          offset: 18,
-        });
-
         mapRef.current = map;
         // 가운데 기본 마커는 현재 비활성화한다.
         // 필요하면 아래 마커 생성 코드를 다시 복구하면 된다.
@@ -1027,11 +735,9 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
           ensureGridSelectionLayer(map);
           ensureFixedImageOverlayLayers(map);
           ensureMeasurementLayers(map);
-          ensureGpsTrackLayers(map);
           syncStatus();
           scheduleGridDraw();
           syncMeasurementOverlay();
-          syncGpsTrackLayers();
           syncGridBoundaryEditorSource();
           ensureGridSelectionLayer(map);
           syncGridBoundaryResizeMarker();
@@ -1070,10 +776,6 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
           map.on("mousemove", handleGridBoundaryDragMove);
           map.on("mouseup", handleGridBoundaryDragEnd);
         }
-        map.on("mouseenter", GPS_TRACK_RAW_POINT_LAYER_ID, handleGpsTrackPointMouseEnter);
-        map.on("mouseenter", GPS_TRACK_CORRECTED_POINT_LAYER_ID, handleGpsTrackPointMouseEnter);
-        map.on("mouseleave", GPS_TRACK_RAW_POINT_LAYER_ID, handleGpsTrackPointMouseLeave);
-        map.on("mouseleave", GPS_TRACK_CORRECTED_POINT_LAYER_ID, handleGpsTrackPointMouseLeave);
       })
       .catch((error) => {
         if (cancelled) {
@@ -1098,8 +800,6 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
       cancelAnimationFrame(fixedOverlayRafRef.current);
       pendingFixedOverlaySourceIdsRef.current.clear();
       window.clearTimeout(fixedOverlayToastTimerRef.current);
-      gpsHoverPopupRef.current?.remove();
-      gpsHoverPopupRef.current = null;
       markerRef.current?.remove();
       markerRef.current = null;
       mapboxGlRef.current = null;
@@ -1137,99 +837,6 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
         draftRectanglePoints,
       ),
     );
-  }
-
-  function ensureGpsTrackLayers(map) {
-    if (!map.getSource(GPS_TRACK_SOURCE_ID)) {
-      map.addSource(GPS_TRACK_SOURCE_ID, {
-        type: "geojson",
-        data: gpsTrackGeoJsonRef.current,
-      });
-    }
-
-    if (!map.getLayer(GPS_TRACK_RAW_LAYER_ID)) {
-      map.addLayer({
-        id: GPS_TRACK_RAW_LAYER_ID,
-        type: "line",
-        source: GPS_TRACK_SOURCE_ID,
-        filter: ["==", ["get", "kind"], "raw"],
-        layout: {
-          "line-cap": "round",
-          "line-join": "round",
-        },
-        paint: {
-          "line-color": "#ef4444",
-          "line-width": 3,
-          "line-opacity": 0.95,
-          "line-dasharray": [2, 2],
-        },
-      });
-    }
-
-    if (!map.getLayer(GPS_TRACK_CORRECTED_LAYER_ID)) {
-      map.addLayer({
-        id: GPS_TRACK_CORRECTED_LAYER_ID,
-        type: "line",
-        source: GPS_TRACK_SOURCE_ID,
-        filter: ["==", ["get", "kind"], "corrected"],
-        layout: {
-          "line-cap": "round",
-          "line-join": "round",
-        },
-        paint: {
-          "line-color": "#2563eb",
-          "line-width": 4,
-          "line-opacity": 0.95,
-        },
-      });
-    }
-
-    if (!map.getLayer(GPS_TRACK_RAW_POINT_LAYER_ID)) {
-      map.addLayer({
-        id: GPS_TRACK_RAW_POINT_LAYER_ID,
-        type: "circle",
-        source: GPS_TRACK_SOURCE_ID,
-        filter: ["==", ["get", "kind"], "raw-point"],
-        paint: {
-          "circle-radius": 4,
-          "circle-color": "#ef4444",
-          "circle-opacity": 0.38,
-          "circle-stroke-width": 1,
-          "circle-stroke-color": "#fecaca",
-        },
-      });
-    }
-
-    if (!map.getLayer(GPS_TRACK_CORRECTED_POINT_LAYER_ID)) {
-      map.addLayer({
-        id: GPS_TRACK_CORRECTED_POINT_LAYER_ID,
-        type: "circle",
-        source: GPS_TRACK_SOURCE_ID,
-        filter: ["==", ["get", "kind"], "corrected-point"],
-        paint: {
-          "circle-radius": 4,
-          "circle-color": "#2563eb",
-          "circle-opacity": 0.82,
-          "circle-stroke-width": 1.5,
-          "circle-stroke-color": "#dbeafe",
-        },
-      });
-    }
-
-    if (!map.getLayer(GPS_TRACK_START_LAYER_ID)) {
-      map.addLayer({
-        id: GPS_TRACK_START_LAYER_ID,
-        type: "circle",
-        source: GPS_TRACK_SOURCE_ID,
-        filter: ["==", ["get", "kind"], "start"],
-        paint: {
-          "circle-radius": 6,
-          "circle-color": "#ffffff",
-          "circle-stroke-width": 3,
-          "circle-stroke-color": "#0f1720",
-        },
-      });
-    }
   }
 
   function ensureFixedImageOverlayLayers(map) {
@@ -1469,7 +1076,7 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
     const map = mapRef.current;
     const mapboxgl = mapboxGlRef.current;
 
-    if (!map || !mapboxgl || isGpsTestMode) {
+    if (!map || !mapboxgl) {
       fixedOverlayCornerMarkersRef.current.forEach((item) => item.marker.remove());
       fixedOverlayCornerMarkersRef.current = [];
       return;
@@ -1576,95 +1183,6 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
     fixedOverlayToastTimerRef.current = window.setTimeout(() => {
       setFixedOverlayToastMessage("");
     }, 1800);
-  }
-
-  function syncGpsTrackLayers() {
-    const map = mapRef.current;
-    const gpsTrackSource = map?.getSource(GPS_TRACK_SOURCE_ID);
-    if (!gpsTrackSource) {
-      return;
-    }
-
-    gpsTrackSource.setData(gpsTrackGeoJsonRef.current);
-  }
-
-  function buildGpsTrackTooltipHtml(feature) {
-    const properties = feature?.properties ?? {};
-    const pointType = properties.kind === "corrected-point" ? "보정 좌표" : "원본 좌표";
-    const lat = Number(properties.lat);
-    const lng = Number(properties.lng);
-
-    return `
-      <div class="gps-track-tooltip">
-        <div><strong>유형</strong>${pointType}</div>
-        <div><strong>순번</strong>${properties.pointIndex ?? "-"}</div>
-        <div><strong>위도</strong>${Number.isFinite(lat) ? lat.toFixed(6) : "-"}</div>
-        <div><strong>경도</strong>${Number.isFinite(lng) ? lng.toFixed(6) : "-"}</div>
-        <div><strong>정확도</strong>${formatGpsMetric(properties.accuracy, "m")}</div>
-        <div><strong>기록시각</strong>${formatGpsSessionDate(properties.recordedAt)}</div>
-        ${properties.status ? `<div><strong>상태</strong>${properties.status}</div>` : ""}
-      </div>
-    `;
-  }
-
-  function buildCoordinateTooltipHtml(lngLat) {
-    const {
-      origin: currentOrigin,
-      gridWidth: currentGridWidth,
-      gridHeight: currentGridHeight,
-    } = drawStateRef.current;
-    const gridCellCode = getGridCellCode(
-      lngLat,
-      currentOrigin,
-      currentGridWidth,
-      currentGridHeight,
-      gridBoundaryCoordinatesRef.current,
-    );
-
-    return `
-      <div class="gps-track-tooltip">
-        <div>${lngLat.lng.toFixed(6)}, ${lngLat.lat.toFixed(6)}</div>
-        ${gridCellCode ? `<div><strong>물리지번</strong> ${gridCellCode}</div>` : ""}
-      </div>
-    `;
-  }
-
-  function handleGpsTrackPointMouseEnter(event) {
-    const map = mapRef.current;
-    if (!map) {
-      return;
-    }
-
-    map.getCanvas().style.cursor = "pointer";
-  }
-
-  function handleGpsTrackPointClick(event) {
-    const popup = gpsHoverPopupRef.current;
-    const map = mapRef.current;
-    const feature = event.features?.[0];
-    if (!popup || !map || !feature) {
-      return;
-    }
-
-    popup.setLngLat(event.lngLat).setHTML(buildGpsTrackTooltipHtml(feature)).addTo(map);
-  }
-
-  function showCoordinatePopup(lngLat) {
-    const popup = gpsHoverPopupRef.current;
-    const map = mapRef.current;
-    if (!popup || !map || !lngLat) {
-      return;
-    }
-
-    popup.setLngLat(lngLat).setHTML(buildCoordinateTooltipHtml(lngLat)).addTo(map);
-  }
-
-  function handleGpsTrackPointMouseLeave() {
-    const map = mapRef.current;
-    if (map) {
-      map.getCanvas().style.cursor = "";
-    }
-
   }
 
   function syncOverlayNameMarkers() {
@@ -2580,32 +2098,6 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
         gridWidth: currentGridWidth,
         gridHeight: currentGridHeight,
       } = drawStateRef.current;
-      const gpsFeature = mapRef.current
-        ?.queryRenderedFeatures(event.point, {
-          layers: [GPS_TRACK_RAW_POINT_LAYER_ID, GPS_TRACK_CORRECTED_POINT_LAYER_ID],
-        })
-        ?.at(0);
-      if (gpsFeature) {
-        const coordinates = gpsFeature.geometry?.coordinates;
-        if (Array.isArray(coordinates) && coordinates.length >= 2) {
-          setSelectedGridCellCoordinates(
-            getGridCellSelectionCoordinates(
-              { lng: coordinates[0], lat: coordinates[1] },
-              currentOrigin,
-              currentGridWidth,
-              currentGridHeight,
-              gridBoundaryCoordinatesRef.current,
-            ),
-          );
-          handleGpsTrackPointClick({
-            ...event,
-            lngLat: { lng: coordinates[0], lat: coordinates[1] },
-            features: [gpsFeature],
-          });
-          return;
-        }
-      }
-
       const selection = getOverlaySelectionAtPoint(event);
       setSelectedShape(selection);
       setSelectedGridCellCoordinates(
@@ -2617,7 +2109,6 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
           gridBoundaryCoordinatesRef.current,
         ),
       );
-      showCoordinatePopup(event.lngLat);
       return;
     }
 
@@ -2944,84 +2435,64 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
 
   return (
     <div className="app-shell">
-      {isGpsTestMode ? null : (
-        <MapboxControlPanel
-          onBack={onBack}
-          mapStyle={mapStyle}
-          setMapStyle={setMapStyle}
-          mapStyleOptions={mapStyleOptions}
-          fixedOverlayVisible={fixedOverlayVisible}
-          setFixedOverlayVisible={setFixedOverlayVisible}
-          fixedOverlayOpacity={fixedOverlayOpacity}
-          setFixedOverlayOpacity={setFixedOverlayOpacity}
-          gridVisible={gridVisible}
-          setGridVisible={setGridVisible}
-          rotationDeg={rotationDeg}
-          setRotationDeg={setRotationDeg}
-          offsetX={offsetX}
-          setOffsetX={setOffsetX}
-          offsetY={offsetY}
-          setOffsetY={setOffsetY}
-          bearing={bearing}
-          setMapBearing={setMapBearing}
-          spinCamera={spinCamera}
-          setOrigin={setOrigin}
-          resetGridOffset={resetGridOffset}
-          resetCamera={resetCamera}
-          center={center}
-          origin={origin}
-          zoom={zoom}
-          pitch={pitch}
-          renderCount={renderCount}
-          statusMessage={statusMessage}
-        />
-      )}
+      <MapboxControlPanel
+        onBack={onBack}
+        mapStyle={mapStyle}
+        setMapStyle={setMapStyle}
+        mapStyleOptions={mapStyleOptions}
+        fixedOverlayVisible={fixedOverlayVisible}
+        setFixedOverlayVisible={setFixedOverlayVisible}
+        fixedOverlayOpacity={fixedOverlayOpacity}
+        setFixedOverlayOpacity={setFixedOverlayOpacity}
+        gridVisible={gridVisible}
+        setGridVisible={setGridVisible}
+        rotationDeg={rotationDeg}
+        setRotationDeg={setRotationDeg}
+        offsetX={offsetX}
+        setOffsetX={setOffsetX}
+        offsetY={offsetY}
+        setOffsetY={setOffsetY}
+        bearing={bearing}
+        setMapBearing={setMapBearing}
+        spinCamera={spinCamera}
+        setOrigin={setOrigin}
+        resetGridOffset={resetGridOffset}
+        resetCamera={resetCamera}
+        center={center}
+        origin={origin}
+        zoom={zoom}
+        pitch={pitch}
+        renderCount={renderCount}
+        statusMessage={statusMessage}
+      />
 
-      {isGpsTestMode ? null : (
-        <MeasurePanel
-          panelRef={measurePanelRef}
-          measureMode={measureMode}
-          activateMeasureMode={activateMeasureMode}
-          measureHint={measureHint}
-          parcelItems={getParcelItems()}
-          blockItems={getBlockItems()}
-          blockColorPalette={BLOCK_COLOR_PALETTE}
-          draftBlockColor={draftBlockColor}
-          defaultBlockImageSrc={defaultBlockImageSrc}
-          parcelVisible={parcelVisible}
-          blockVisible={blockVisible}
-          selectedShape={selectedShape}
-          selectedOverlayLabel={getSelectedOverlayLabel()}
-          onToggleParcelVisible={() => setParcelVisible((current) => !current)}
-          onToggleBlockVisible={() => setBlockVisible((current) => !current)}
-          onSelectDraftBlockColor={setDraftBlockColor}
-          onChangeDefaultBlockImage={updateDefaultBlockImage}
-          onUpdateBlockImage={updateBlockImage}
-          onSelectOverlay={handleSelectOverlay}
-          onFocusOverlay={handleFocusOverlay}
-          onDeleteOverlay={deleteOverlay}
-          onUpdateOverlayName={updateOverlayName}
-          onUpdateCircleDiameter={updateCircleDiameterById}
-          onUpdateRectangleDimension={updateRectangleDimensionById}
-          onUpdateBlockColor={updateBlockColor}
-        />
-      )}
-
-      {isGpsTestMode ? (
-        <GpsTestPanel
-          gpsSessions={gpsSessions}
-          gpsSessionsLoading={gpsSessionsLoading}
-          gpsSessionsError={gpsSessionsError}
-          selectedGpsSessionId={selectedGpsSessionId}
-          gpsTrackLoading={gpsTrackLoading}
-          gpsTrackError={gpsTrackError}
-          gpsTrackSummary={gpsTrackSummary}
-          formatGpsSessionDate={formatGpsSessionDate}
-          getGpsResultRows={getGpsResultRows}
-          onRefresh={() => setGpsSessionsRefreshToken((current) => current + 1)}
-          onSelectSession={setSelectedGpsSessionId}
-        />
-      ) : null}
+      <MeasurePanel
+        panelRef={measurePanelRef}
+        measureMode={measureMode}
+        activateMeasureMode={activateMeasureMode}
+        measureHint={measureHint}
+        parcelItems={getParcelItems()}
+        blockItems={getBlockItems()}
+        blockColorPalette={BLOCK_COLOR_PALETTE}
+        draftBlockColor={draftBlockColor}
+        defaultBlockImageSrc={defaultBlockImageSrc}
+        parcelVisible={parcelVisible}
+        blockVisible={blockVisible}
+        selectedShape={selectedShape}
+        selectedOverlayLabel={getSelectedOverlayLabel()}
+        onToggleParcelVisible={() => setParcelVisible((current) => !current)}
+        onToggleBlockVisible={() => setBlockVisible((current) => !current)}
+        onSelectDraftBlockColor={setDraftBlockColor}
+        onChangeDefaultBlockImage={updateDefaultBlockImage}
+        onUpdateBlockImage={updateBlockImage}
+        onSelectOverlay={handleSelectOverlay}
+        onFocusOverlay={handleFocusOverlay}
+        onDeleteOverlay={deleteOverlay}
+        onUpdateOverlayName={updateOverlayName}
+        onUpdateCircleDiameter={updateCircleDiameterById}
+        onUpdateRectangleDimension={updateRectangleDimensionById}
+        onUpdateBlockColor={updateBlockColor}
+      />
 
       <main ref={mapRootRef} className="map-root map-root--mapbox" aria-label="Mapbox 지도" />
 
