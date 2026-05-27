@@ -170,7 +170,230 @@ export function ensureGridLayer(map) {
   }
 }
 
-export function buildGridGeoJson({ corners, origin, gridWidth, gridHeight, rotationDeg, offsetX = 0, offsetY = 0 }) {
+function buildLineFeature(startCoord, endCoord) {
+  return {
+    type: "Feature",
+    geometry: {
+      type: "LineString",
+      coordinates: [
+        [startCoord.lng, startCoord.lat],
+        [endCoord.lng, endCoord.lat],
+      ],
+    },
+    properties: {},
+  };
+}
+
+function buildClosedBoundaryFeature(coordinates) {
+  return {
+    type: "Feature",
+    geometry: {
+      type: "LineString",
+      coordinates: [...coordinates, coordinates[0]],
+    },
+    properties: {
+      role: "boundary",
+    },
+  };
+}
+
+function convertGridPointToLatLng(u, v, radians, offsetX, offsetY, origin) {
+  const worldPoint = gridToWorldFrame(u, v, radians);
+  worldPoint.x += offsetX;
+  worldPoint.y += offsetY;
+  return localMetersToLatLng(worldPoint.x, worldPoint.y, origin);
+}
+
+function pushBoundaryFeatures(features, minU, maxU, minV, maxV, radians, offsetX, offsetY, origin) {
+  const topLeft = convertGridPointToLatLng(minU, maxV, radians, offsetX, offsetY, origin);
+  const topRight = convertGridPointToLatLng(maxU, maxV, radians, offsetX, offsetY, origin);
+  const bottomRight = convertGridPointToLatLng(maxU, minV, radians, offsetX, offsetY, origin);
+  const bottomLeft = convertGridPointToLatLng(minU, minV, radians, offsetX, offsetY, origin);
+
+  features.push(buildLineFeature(topLeft, topRight));
+  features.push(buildLineFeature(topRight, bottomRight));
+  features.push(buildLineFeature(bottomRight, bottomLeft));
+  features.push(buildLineFeature(bottomLeft, topLeft));
+}
+
+function buildOrderedBoundaryPolygonFromUvBounds(minU, maxU, minV, maxV, radians, offsetX, offsetY, origin) {
+  const topLeft = convertGridPointToLatLng(minU, maxV, radians, offsetX, offsetY, origin);
+  const topRight = convertGridPointToLatLng(maxU, maxV, radians, offsetX, offsetY, origin);
+  const bottomRight = convertGridPointToLatLng(maxU, minV, radians, offsetX, offsetY, origin);
+  const bottomLeft = convertGridPointToLatLng(minU, minV, radians, offsetX, offsetY, origin);
+
+  return [
+    [topLeft.lng, topLeft.lat],
+    [topRight.lng, topRight.lat],
+    [bottomRight.lng, bottomRight.lat],
+    [bottomLeft.lng, bottomLeft.lat],
+  ];
+}
+
+function normalizePolygonOrder(polygon, origin, radians, offsetX, offsetY) {
+  if (!Array.isArray(polygon) || polygon.length < 4) {
+    return null;
+  }
+
+  const points = polygon
+    .filter((point) => Array.isArray(point) && point.length === 2)
+    .map(([lng, lat]) => {
+      const local = latLngToLocalMeters(lat, lng, origin);
+      const uv = worldToGridFrame(local.x - offsetX, local.y - offsetY, radians);
+      return { raw: [lng, lat], u: uv.u, v: uv.v };
+    });
+
+  if (points.length < 4) {
+    return null;
+  }
+
+  const sortedByTop = [...points].sort((a, b) => b.v - a.v);
+  const topPoints = sortedByTop.slice(0, 2).sort((a, b) => a.u - b.u);
+  const bottomPoints = sortedByTop.slice(-2).sort((a, b) => a.u - b.u);
+
+  return [topPoints[0].raw, topPoints[1].raw, bottomPoints[1].raw, bottomPoints[0].raw];
+}
+
+function normalizeVector(vector) {
+  const length = Math.hypot(vector.x, vector.y);
+  if (!length) {
+    return { x: 0, y: 0 };
+  }
+
+  return {
+    x: vector.x / length,
+    y: vector.y / length,
+  };
+}
+
+function dotProduct(a, b) {
+  return a.x * b.x + a.y * b.y;
+}
+
+function scaleVector(vector, scalar) {
+  return {
+    x: vector.x * scalar,
+    y: vector.y * scalar,
+  };
+}
+
+function addVector(point, vector) {
+  return {
+    x: point.x + vector.x,
+    y: point.y + vector.y,
+  };
+}
+
+function buildOrderedMaskGridFeatures(features, polygon, origin, gridWidth, gridHeight) {
+  if (!Array.isArray(polygon) || polygon.length < 4) {
+    return false;
+  }
+
+  const [topLeftRaw, topRightRaw, bottomRightRaw, bottomLeftRaw] = polygon;
+  const requiredPoints = [topLeftRaw, topRightRaw, bottomRightRaw, bottomLeftRaw];
+  if (requiredPoints.some((point) => !Array.isArray(point) || point.length !== 2)) {
+    return false;
+  }
+
+  const topLeft = latLngToLocalMeters(topLeftRaw[1], topLeftRaw[0], origin);
+  const topRight = latLngToLocalMeters(topRightRaw[1], topRightRaw[0], origin);
+  const bottomRight = latLngToLocalMeters(bottomRightRaw[1], bottomRightRaw[0], origin);
+  const bottomLeft = latLngToLocalMeters(bottomLeftRaw[1], bottomLeftRaw[0], origin);
+
+  let topDirection = normalizeVector({ x: bottomRight.x - bottomLeft.x, y: bottomRight.y - bottomLeft.y });
+  let leftDirection = {
+    x: -topDirection.y,
+    y: topDirection.x,
+  };
+  const rawBottomDirection = { x: bottomRight.x - bottomLeft.x, y: bottomRight.y - bottomLeft.y };
+  if (dotProduct(topDirection, rawBottomDirection) < 0) {
+    topDirection = scaleVector(topDirection, -1);
+    leftDirection = scaleVector(leftDirection, -1);
+  }
+
+  const rawLeftDirection = { x: topLeft.x - bottomLeft.x, y: topLeft.y - bottomLeft.y };
+  if (dotProduct(leftDirection, rawLeftDirection) < 0) {
+    leftDirection = scaleVector(leftDirection, -1);
+  }
+
+  const usableWidth = Math.max(
+    0,
+    dotProduct(
+      {
+        x: bottomRight.x - bottomLeft.x,
+        y: bottomRight.y - bottomLeft.y,
+      },
+      topDirection,
+    ),
+  );
+  const usableHeight = Math.max(
+    0,
+    dotProduct(
+      rawLeftDirection,
+      leftDirection,
+    ),
+  );
+  const epsilon = 0.0001;
+  const snappedWidth = Math.floor((usableWidth + epsilon) / gridWidth) * gridWidth;
+  const snappedHeight = Math.floor((usableHeight + epsilon) / gridHeight) * gridHeight;
+  const snappedBottomLeft = bottomLeft;
+  const snappedBottomRight = addVector(bottomLeft, scaleVector(topDirection, snappedWidth));
+  const snappedTopLeft = addVector(bottomLeft, scaleVector(leftDirection, snappedHeight));
+  const snappedTopRight = addVector(snappedTopLeft, scaleVector(topDirection, snappedWidth));
+  const snappedBoundary = [
+    localMetersToLatLng(snappedTopLeft.x, snappedTopLeft.y, origin),
+    localMetersToLatLng(snappedTopRight.x, snappedTopRight.y, origin),
+    localMetersToLatLng(snappedBottomRight.x, snappedBottomRight.y, origin),
+    localMetersToLatLng(snappedBottomLeft.x, snappedBottomLeft.y, origin),
+  ];
+
+  features.push(buildClosedBoundaryFeature(snappedBoundary.map((point) => [point.lng, point.lat])));
+  features.push(buildLineFeature(snappedBoundary[0], snappedBoundary[1]));
+  features.push(buildLineFeature(snappedBoundary[1], snappedBoundary[2]));
+  features.push(buildLineFeature(snappedBoundary[2], snappedBoundary[3]));
+  features.push(buildLineFeature(snappedBoundary[3], snappedBoundary[0]));
+
+  for (let offset = gridWidth; offset < snappedWidth - epsilon; offset += gridWidth) {
+    const start = {
+      x: bottomLeft.x + topDirection.x * offset,
+      y: bottomLeft.y + topDirection.y * offset,
+    };
+    const end = {
+      x: start.x + leftDirection.x * snappedHeight,
+      y: start.y + leftDirection.y * snappedHeight,
+    };
+    const startCoord = localMetersToLatLng(start.x, start.y, origin);
+    const endCoord = localMetersToLatLng(end.x, end.y, origin);
+    features.push(buildLineFeature(startCoord, endCoord));
+  }
+
+  for (let offset = gridHeight; offset < snappedHeight - epsilon; offset += gridHeight) {
+    const start = {
+      x: bottomLeft.x + leftDirection.x * offset,
+      y: bottomLeft.y + leftDirection.y * offset,
+    };
+    const end = {
+      x: start.x + topDirection.x * snappedWidth,
+      y: start.y + topDirection.y * snappedWidth,
+    };
+    const startCoord = localMetersToLatLng(start.x, start.y, origin);
+    const endCoord = localMetersToLatLng(end.x, end.y, origin);
+    features.push(buildLineFeature(startCoord, endCoord));
+  }
+
+  return true;
+}
+
+export function buildGridGeoJson({
+  corners,
+  origin,
+  gridWidth,
+  gridHeight,
+  rotationDeg,
+  offsetX = 0,
+  offsetY = 0,
+  maskPolygons = [],
+}) {
   const safeGridWidth = Math.max(5, Number(gridWidth) || 50);
   const safeGridHeight = Math.max(5, Number(gridHeight) || 50);
   const radians = (rotationDeg * Math.PI) / 180;
@@ -185,10 +408,27 @@ export function buildGridGeoJson({ corners, origin, gridWidth, gridHeight, rotat
   const uValues = uvCorners.map((point) => point.u);
   const vValues = uvCorners.map((point) => point.v);
   const margin = Math.hypot(safeGridWidth, safeGridHeight) * 2;
-  const minU = Math.min(...uValues) - margin;
-  const maxU = Math.max(...uValues) + margin;
-  const minV = Math.min(...vValues) - margin;
-  const maxV = Math.max(...vValues) + margin;
+  let minU = Math.min(...uValues) - margin;
+  let maxU = Math.max(...uValues) + margin;
+  let minV = Math.min(...vValues) - margin;
+  let maxV = Math.max(...vValues) + margin;
+
+  const maskUvPoints = maskPolygons.flatMap((polygon) =>
+    polygon
+      .filter((coordinate) => Array.isArray(coordinate) && coordinate.length === 2)
+      .map(([lng, lat]) => {
+        const local = latLngToLocalMeters(lat, lng, origin);
+        return worldToGridFrame(local.x - safeOffsetX, local.y - safeOffsetY, radians);
+      }),
+  );
+
+  if (maskUvPoints.length >= 4) {
+    minU = Math.min(...maskUvPoints.map((point) => point.u));
+    maxU = Math.max(...maskUvPoints.map((point) => point.u));
+    minV = Math.min(...maskUvPoints.map((point) => point.v));
+    maxV = Math.max(...maskUvPoints.map((point) => point.v));
+  }
+
   const firstU = Math.floor(minU / safeGridWidth) * safeGridWidth;
   const firstV = Math.floor(minV / safeGridHeight) * safeGridHeight;
 
@@ -200,51 +440,41 @@ export function buildGridGeoJson({ corners, origin, gridWidth, gridHeight, rotat
     return { data: createEmptyFeatureCollection(), lineCount: estimatedLineCount, skipped: true };
   }
 
-  const lineOverdraw = Math.hypot(safeGridWidth, safeGridHeight) * 3;
   const features = [];
+  const hasMaskBounds = maskUvPoints.length >= 4;
+
+  if (hasMaskBounds) {
+    const boundaryPolygon =
+      maskPolygons.length === 1
+        ? maskPolygons[0]
+        : buildOrderedBoundaryPolygonFromUvBounds(minU, maxU, minV, maxV, radians, safeOffsetX, safeOffsetY, origin);
+
+    if (buildOrderedMaskGridFeatures(features, boundaryPolygon, origin, safeGridWidth, safeGridHeight)) {
+      return {
+        data: {
+          type: "FeatureCollection",
+          features,
+        },
+        lineCount: features.length,
+        skipped: false,
+      };
+    }
+
+    return { data: createEmptyFeatureCollection(), lineCount: 0, skipped: false };
+  }
+
+  const lineOverdraw = Math.hypot(safeGridWidth, safeGridHeight) * 3;
 
   for (let u = firstU; u <= maxU + safeGridWidth; u += safeGridWidth) {
-    const a = gridToWorldFrame(u, minV - lineOverdraw, radians);
-    const b = gridToWorldFrame(u, maxV + lineOverdraw, radians);
-    a.x += safeOffsetX;
-    a.y += safeOffsetY;
-    b.x += safeOffsetX;
-    b.y += safeOffsetY;
-    const aCoord = localMetersToLatLng(a.x, a.y, origin);
-    const bCoord = localMetersToLatLng(b.x, b.y, origin);
-    features.push({
-      type: "Feature",
-      geometry: {
-        type: "LineString",
-        coordinates: [
-          [aCoord.lng, aCoord.lat],
-          [bCoord.lng, bCoord.lat],
-        ],
-      },
-      properties: {},
-    });
+    const aCoord = convertGridPointToLatLng(u, minV - lineOverdraw, radians, safeOffsetX, safeOffsetY, origin);
+    const bCoord = convertGridPointToLatLng(u, maxV + lineOverdraw, radians, safeOffsetX, safeOffsetY, origin);
+    features.push(buildLineFeature(aCoord, bCoord));
   }
 
   for (let v = firstV; v <= maxV + safeGridHeight; v += safeGridHeight) {
-    const a = gridToWorldFrame(minU - lineOverdraw, v, radians);
-    const b = gridToWorldFrame(maxU + lineOverdraw, v, radians);
-    a.x += safeOffsetX;
-    a.y += safeOffsetY;
-    b.x += safeOffsetX;
-    b.y += safeOffsetY;
-    const aCoord = localMetersToLatLng(a.x, a.y, origin);
-    const bCoord = localMetersToLatLng(b.x, b.y, origin);
-    features.push({
-      type: "Feature",
-      geometry: {
-        type: "LineString",
-        coordinates: [
-          [aCoord.lng, aCoord.lat],
-          [bCoord.lng, bCoord.lat],
-        ],
-      },
-      properties: {},
-    });
+    const aCoord = convertGridPointToLatLng(minU - lineOverdraw, v, radians, safeOffsetX, safeOffsetY, origin);
+    const bCoord = convertGridPointToLatLng(maxU + lineOverdraw, v, radians, safeOffsetX, safeOffsetY, origin);
+    features.push(buildLineFeature(aCoord, bCoord));
   }
 
   return {

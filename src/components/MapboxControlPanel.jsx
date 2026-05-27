@@ -90,10 +90,10 @@ export default function MapboxControlPanel({
           />
         </label>
 
-        <label className="field">
-          <span>격자 회전({rotationDeg}deg)</span>
-          <input type="number" min="-180" max="180" step="1" value={rotationDeg} onChange={(event) => setRotationDeg(Number(event.target.value))} />
-        </label>
+        {/*<label className="field">*/}
+        {/*  <span>격자 회전({rotationDeg}deg)</span>*/}
+        {/*  <input type="number" min="-180" max="180" step="1" value={rotationDeg} onChange={(event) => setRotationDeg(Number(event.target.value))} />*/}
+        {/*</label>*/}
 
         <label className="field">
           <span>X offset({offsetX}m)</span>
@@ -110,15 +110,15 @@ export default function MapboxControlPanel({
           <input type="number" min="-180" max="180" step="1" value={bearing} onChange={(event) => setMapBearing(Number(event.target.value))} />
         </label>
 
-        <label className="field">
-          <span className="field-label--updated">원점 위도</span>
-          <input type="number" step="0.000001" value={originLatInput} onChange={(event) => setOriginLatInput(event.target.value)} />
-        </label>
+        {/*<label className="field">*/}
+        {/*  <span className="field-label--updated">원점 위도</span>*/}
+        {/*  <input type="number" step="0.000001" value={originLatInput} onChange={(event) => setOriginLatInput(event.target.value)} />*/}
+        {/*</label>*/}
 
-        <label className="field">
-          <span className="field-label--updated">원점 경도</span>
-          <input type="number" step="0.000001" value={originLngInput} onChange={(event) => setOriginLngInput(event.target.value)} />
-        </label>
+        {/*<label className="field">*/}
+        {/*  <span className="field-label--updated">원점 경도</span>*/}
+        {/*  <input type="number" step="0.000001" value={originLngInput} onChange={(event) => setOriginLngInput(event.target.value)} />*/}
+        {/*</label>*/}
 
         <div className="button-row">
           <button type="button" onClick={applyOriginInput}>

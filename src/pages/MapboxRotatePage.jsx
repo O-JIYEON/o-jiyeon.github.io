@@ -15,6 +15,8 @@ import {
   DEFAULT_MAPBOX_STYLE,
   DEFAULT_GRID_SIZE_METERS,
   DEFAULT_PITCH,
+  GRID_BOUNDARY_ROTATION_DEG,
+  FIXED_GRID_BOUNDARY_COORDINATES,
   DRAWING_SNAP_METERS,
   GRID_SOURCE_ID,
   MAPBOX_STYLES,
@@ -55,6 +57,10 @@ const GPS_TRACK_CORRECTED_LAYER_ID = "echotech-gps-track-corrected-layer";
 const GPS_TRACK_RAW_POINT_LAYER_ID = "echotech-gps-track-raw-point-layer";
 const GPS_TRACK_CORRECTED_POINT_LAYER_ID = "echotech-gps-track-corrected-point-layer";
 const GPS_TRACK_START_LAYER_ID = "echotech-gps-track-start-layer";
+const GRID_BOUNDARY_EDITOR_SOURCE_ID = "echotech-grid-boundary-editor-source";
+const GRID_BOUNDARY_EDITOR_FILL_LAYER_ID = "echotech-grid-boundary-editor-fill-layer";
+const GRID_BOUNDARY_EDITOR_LINE_LAYER_ID = "echotech-grid-boundary-editor-line-layer";
+const GRID_BOUNDARY_EDIT_ENABLED = false;
 const FIXED_IMAGE_OVERLAYS = [
   {
     sourceId: "yard-overlay-source-1",
@@ -99,6 +105,186 @@ function createInitialFixedImageCoordinates({ coordinates }) {
 
 function getFixedOverlayCoordinates(overlay) {
   return Array.isArray(overlay.coordinates) ? overlay.coordinates : [];
+}
+
+function cloneGridBoundaryCoordinates() {
+  if (!Array.isArray(FIXED_GRID_BOUNDARY_COORDINATES) || FIXED_GRID_BOUNDARY_COORDINATES.length < 4) {
+    return [];
+  }
+
+  return FIXED_GRID_BOUNDARY_COORDINATES.map((coordinate) => [...coordinate]);
+}
+
+function createGridBoundaryEditorGeoJson(coordinates) {
+  if (!Array.isArray(coordinates) || coordinates.length < 4) {
+    return createEmptyFeatureCollection();
+  }
+
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        geometry: {
+          type: "Polygon",
+          coordinates: [[...coordinates, coordinates[0]]],
+        },
+        properties: {},
+      },
+    ],
+  };
+}
+
+function translateGridBoundaryCoordinates(coordinates, dx, dy, origin) {
+  return coordinates.map(([lng, lat]) => {
+    const local = latLngToLocalMeters(lat, lng, origin);
+    const moved = localMetersToLatLng(local.x + dx, local.y + dy, origin);
+    return [moved.lng, moved.lat];
+  });
+}
+
+function normalizeLocalVector(vector) {
+  const length = Math.hypot(vector.x, vector.y);
+  if (!length) {
+    return { x: 0, y: 0 };
+  }
+
+  return {
+    x: vector.x / length,
+    y: vector.y / length,
+  };
+}
+
+function dotLocalVector(a, b) {
+  return a.x * b.x + a.y * b.y;
+}
+
+function scaleLocalVector(vector, scalar) {
+  return {
+    x: vector.x * scalar,
+    y: vector.y * scalar,
+  };
+}
+
+function addLocalVector(point, vector) {
+  return {
+    x: point.x + vector.x,
+    y: point.y + vector.y,
+  };
+}
+
+function getBoundaryAxesFromRotation(rotationDeg) {
+  const radians = (Number(rotationDeg) * Math.PI) / 180;
+  const horizontalDirection = {
+    x: Math.cos(radians),
+    y: Math.sin(radians),
+  };
+  const verticalDirection = {
+    x: -Math.sin(radians),
+    y: Math.cos(radians),
+  };
+
+  return { horizontalDirection, verticalDirection };
+}
+
+function normalizeGridBoundaryCoordinates(coordinates, origin) {
+  if (!Array.isArray(coordinates) || coordinates.length < 4) {
+    return [];
+  }
+
+  const [topLeftRaw, topRightRaw, bottomRightRaw, bottomLeftRaw] = coordinates;
+  if ([topLeftRaw, topRightRaw, bottomRightRaw, bottomLeftRaw].some((point) => !Array.isArray(point) || point.length !== 2)) {
+    return [];
+  }
+
+  const topLeft = latLngToLocalMeters(topLeftRaw[1], topLeftRaw[0], origin);
+  const bottomRight = latLngToLocalMeters(bottomRightRaw[1], bottomRightRaw[0], origin);
+  const bottomLeft = latLngToLocalMeters(bottomLeftRaw[1], bottomLeftRaw[0], origin);
+
+  let { horizontalDirection, verticalDirection } = getBoundaryAxesFromRotation(GRID_BOUNDARY_ROTATION_DEG);
+  const rawVertical = {
+    x: topLeft.x - bottomLeft.x,
+    y: topLeft.y - bottomLeft.y,
+  };
+  const rawHorizontal = {
+    x: bottomRight.x - bottomLeft.x,
+    y: bottomRight.y - bottomLeft.y,
+  };
+  if (dotLocalVector(horizontalDirection, rawHorizontal) < 0) {
+    horizontalDirection = scaleLocalVector(horizontalDirection, -1);
+    verticalDirection = scaleLocalVector(verticalDirection, -1);
+  }
+  if (dotLocalVector(verticalDirection, rawVertical) < 0) {
+    verticalDirection = scaleLocalVector(verticalDirection, -1);
+  }
+
+  const width = Math.max(
+    0,
+    dotLocalVector(rawHorizontal, horizontalDirection),
+  );
+  const height = Math.max(0, dotLocalVector(rawVertical, verticalDirection));
+
+  const nextBottomLeft = bottomLeft;
+  const nextBottomRight = addLocalVector(bottomLeft, scaleLocalVector(horizontalDirection, width));
+  const nextTopLeft = addLocalVector(bottomLeft, scaleLocalVector(verticalDirection, height));
+  const nextTopRight = addLocalVector(nextTopLeft, scaleLocalVector(horizontalDirection, width));
+
+  return [
+    localMetersToLatLng(nextTopLeft.x, nextTopLeft.y, origin),
+    localMetersToLatLng(nextTopRight.x, nextTopRight.y, origin),
+    localMetersToLatLng(nextBottomRight.x, nextBottomRight.y, origin),
+    localMetersToLatLng(nextBottomLeft.x, nextBottomLeft.y, origin),
+  ].map((point) => [point.lng, point.lat]);
+}
+
+function resizeGridBoundaryCoordinates(coordinates, targetCoordinate, origin, gridWidth, gridHeight) {
+  if (!Array.isArray(coordinates) || coordinates.length < 4 || !Array.isArray(targetCoordinate) || targetCoordinate.length !== 2) {
+    return coordinates;
+  }
+
+  const [topLeftRaw, , bottomRightRaw, bottomLeftRaw] = coordinates;
+  const topLeft = latLngToLocalMeters(topLeftRaw[1], topLeftRaw[0], origin);
+  const bottomRight = latLngToLocalMeters(bottomRightRaw[1], bottomRightRaw[0], origin);
+  const bottomLeft = latLngToLocalMeters(bottomLeftRaw[1], bottomLeftRaw[0], origin);
+  const target = latLngToLocalMeters(targetCoordinate[1], targetCoordinate[0], origin);
+  const widthStep = Math.max(1, Number(gridWidth) || 10);
+  const heightStep = Math.max(1, Number(gridHeight) || 10);
+
+  let { horizontalDirection, verticalDirection } = getBoundaryAxesFromRotation(GRID_BOUNDARY_ROTATION_DEG);
+  const rawVertical = {
+    x: topLeft.x - bottomLeft.x,
+    y: topLeft.y - bottomLeft.y,
+  };
+  const rawHorizontal = {
+    x: bottomRight.x - bottomLeft.x,
+    y: bottomRight.y - bottomLeft.y,
+  };
+  if (dotLocalVector(horizontalDirection, rawHorizontal) < 0) {
+    horizontalDirection = scaleLocalVector(horizontalDirection, -1);
+    verticalDirection = scaleLocalVector(verticalDirection, -1);
+  }
+  if (dotLocalVector(verticalDirection, rawVertical) < 0) {
+    verticalDirection = scaleLocalVector(verticalDirection, -1);
+  }
+
+  const delta = {
+    x: target.x - bottomLeft.x,
+    y: target.y - bottomLeft.y,
+  };
+
+  const snappedWidth = Math.max(widthStep, Math.round(dotLocalVector(delta, horizontalDirection) / widthStep) * widthStep);
+  const snappedHeight = Math.max(heightStep, Math.round(dotLocalVector(delta, verticalDirection) / heightStep) * heightStep);
+
+  const nextBottomRight = addLocalVector(bottomLeft, scaleLocalVector(horizontalDirection, snappedWidth));
+  const nextTopLeft = addLocalVector(bottomLeft, scaleLocalVector(verticalDirection, snappedHeight));
+  const nextTopRight = addLocalVector(nextTopLeft, scaleLocalVector(horizontalDirection, snappedWidth));
+
+  return normalizeGridBoundaryCoordinates([
+    localMetersToLatLng(nextTopLeft.x, nextTopLeft.y, origin),
+    localMetersToLatLng(nextTopRight.x, nextTopRight.y, origin),
+    localMetersToLatLng(nextBottomRight.x, nextBottomRight.y, origin),
+    localMetersToLatLng(bottomLeft.x, bottomLeft.y, origin),
+  ].map((point) => [point.lng, point.lat]), origin);
 }
 
 function formatGpsSessionDate(value) {
@@ -279,6 +465,8 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
   const pendingFixedOverlaySourceIdsRef = useRef(new Set());
   const fixedOverlayToastTimerRef = useRef(0);
   const fixedOverlayMarkerDragSuppressUntilRef = useRef(0);
+  const gridBoundaryResizeMarkerRef = useRef(null);
+  const gridBoundaryDragStateRef = useRef(null);
   const measurePanelRef = useRef(null);
   const gpsTrackGeoJsonRef = useRef(createEmptyFeatureCollection());
   const rafRef = useRef(0);
@@ -316,6 +504,9 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
   const [fixedOverlayVisible, setFixedOverlayVisible] = useState(true);
   const [fixedOverlayOpacity, setFixedOverlayOpacity] = useState("1");
   const [fixedOverlays, setFixedOverlays] = useState(() => cloneFixedImageOverlays());
+  const [gridBoundaryCoordinates, setGridBoundaryCoordinates] = useState(() =>
+    normalizeGridBoundaryCoordinates(cloneGridBoundaryCoordinates(), { lat: DEFAULT_CENTER[1], lng: DEFAULT_CENTER[0] }),
+  );
   const [rotationDeg, setRotationDeg] = useState(DEFAULT_GRID_ROTATION);
   const [offsetX, setOffsetX] = useState(0);
   const [offsetY, setOffsetY] = useState(DEFAULT_GRID_OFFSET_Y);
@@ -358,6 +549,16 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
       coordinates: getFixedOverlayCoordinates(overlay).map((coordinate) => [...coordinate]),
     }));
   }, [fixedOverlays]);
+
+  const gridBoundaryCoordinatesRef = useRef(gridBoundaryCoordinates);
+
+  useEffect(() => {
+    gridBoundaryCoordinatesRef.current = gridBoundaryCoordinates.map((coordinate) => [...coordinate]);
+    console.log("gridBoundaryCoordinates", gridBoundaryCoordinatesRef.current);
+    syncGridBoundaryEditorSource();
+    syncGridBoundaryResizeMarker();
+    scheduleGridDraw();
+  }, [gridBoundaryCoordinates]);
 
   useEffect(() => {
     if (!isGpsTestMode) {
@@ -639,6 +840,7 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
           }
           applyKoreanLabels(map);
           ensureGridLayer(map);
+          ensureGridBoundaryEditorLayers(map);
           ensureFixedImageOverlayLayers(map);
           ensureMeasurementLayers(map);
           ensureGpsTrackLayers(map);
@@ -646,6 +848,8 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
           scheduleGridDraw();
           syncMeasurementOverlay();
           syncGpsTrackLayers();
+          syncGridBoundaryEditorSource();
+          syncGridBoundaryResizeMarker();
           syncFixedOverlaySources();
           syncFixedOverlayCornerMarkers();
           syncOverlayNameMarkers();
@@ -674,6 +878,11 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
         map.on("mousedown", MEASURE_LINE_LAYER_ID, handleMeasureDragStart);
         map.on("mousemove", handleMeasureDragMove);
         map.on("mouseup", handleMeasureDragEnd);
+        if (GRID_BOUNDARY_EDIT_ENABLED) {
+          map.on("mousedown", GRID_BOUNDARY_EDITOR_FILL_LAYER_ID, handleGridBoundaryDragStart);
+          map.on("mousemove", handleGridBoundaryDragMove);
+          map.on("mouseup", handleGridBoundaryDragEnd);
+        }
         map.on("mouseenter", GPS_TRACK_RAW_POINT_LAYER_ID, handleGpsTrackPointMouseEnter);
         map.on("mouseenter", GPS_TRACK_CORRECTED_POINT_LAYER_ID, handleGpsTrackPointMouseEnter);
         map.on("mouseleave", GPS_TRACK_RAW_POINT_LAYER_ID, handleGpsTrackPointMouseLeave);
@@ -695,6 +904,8 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
       blockImageMarkersRef.current = [];
       blockRotateHandleRef.current?.remove();
       blockRotateHandleRef.current = null;
+      gridBoundaryResizeMarkerRef.current?.remove();
+      gridBoundaryResizeMarkerRef.current = null;
       fixedOverlayCornerMarkersRef.current.forEach((item) => item.marker.remove());
       fixedOverlayCornerMarkersRef.current = [];
       cancelAnimationFrame(fixedOverlayRafRef.current);
@@ -864,6 +1075,134 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
         });
       }
     });
+  }
+
+  function ensureGridBoundaryEditorLayers(map) {
+    if (!map.getSource(GRID_BOUNDARY_EDITOR_SOURCE_ID)) {
+      map.addSource(GRID_BOUNDARY_EDITOR_SOURCE_ID, {
+        type: "geojson",
+        data: createGridBoundaryEditorGeoJson(gridBoundaryCoordinatesRef.current),
+      });
+    }
+
+    if (!map.getLayer(GRID_BOUNDARY_EDITOR_FILL_LAYER_ID)) {
+      map.addLayer({
+        id: GRID_BOUNDARY_EDITOR_FILL_LAYER_ID,
+        type: "fill",
+        source: GRID_BOUNDARY_EDITOR_SOURCE_ID,
+        paint: {
+          "fill-color": "#4df0de",
+          "fill-opacity": 0.02,
+        },
+      });
+    }
+
+    if (!map.getLayer(GRID_BOUNDARY_EDITOR_LINE_LAYER_ID)) {
+      map.addLayer({
+        id: GRID_BOUNDARY_EDITOR_LINE_LAYER_ID,
+        type: "line",
+        source: GRID_BOUNDARY_EDITOR_SOURCE_ID,
+        paint: {
+          "line-color": "#4df0de",
+          "line-width": 2.2,
+          "line-opacity": 0.95,
+        },
+      });
+    }
+  }
+
+  function syncGridBoundaryEditorSource() {
+    const map = mapRef.current;
+    const source = map?.getSource(GRID_BOUNDARY_EDITOR_SOURCE_ID);
+    if (!source) {
+      return;
+    }
+
+    source.setData(createGridBoundaryEditorGeoJson(gridBoundaryCoordinatesRef.current));
+  }
+
+  function syncGridBoundaryResizeMarker() {
+    const map = mapRef.current;
+    const mapboxgl = mapboxGlRef.current;
+    if (!GRID_BOUNDARY_EDIT_ENABLED || !map || !mapboxgl || gridBoundaryCoordinatesRef.current.length < 4) {
+      gridBoundaryResizeMarkerRef.current?.remove();
+      gridBoundaryResizeMarkerRef.current = null;
+      return;
+    }
+
+    const topRight = gridBoundaryCoordinatesRef.current[1];
+    if (!Array.isArray(topRight) || topRight.length !== 2) {
+      return;
+    }
+
+    if (!gridBoundaryResizeMarkerRef.current) {
+      gridBoundaryResizeMarkerRef.current = new mapboxgl.Marker({
+        color: "#f97316",
+        scale: 0.95,
+        draggable: true,
+      })
+        .setLngLat(topRight)
+        .addTo(map)
+        .on("drag", (event) => {
+          const nextLngLat = event.target.getLngLat();
+          const {
+            origin: currentOrigin,
+            gridWidth: currentGridWidth,
+            gridHeight: currentGridHeight,
+          } = drawStateRef.current;
+          setGridBoundaryCoordinates((current) =>
+            resizeGridBoundaryCoordinates(current, [nextLngLat.lng, nextLngLat.lat], currentOrigin, currentGridWidth, currentGridHeight),
+          );
+        })
+        .on("dragend", () => {
+          scheduleGridDraw();
+        });
+    }
+
+    gridBoundaryResizeMarkerRef.current.setLngLat(topRight);
+  }
+
+  function handleGridBoundaryDragStart(event) {
+    if (!GRID_BOUNDARY_EDIT_ENABLED) {
+      return;
+    }
+
+    if (!gridBoundaryCoordinatesRef.current.length) {
+      return;
+    }
+
+    gridBoundaryDragStateRef.current = {
+      startPoint: event.lngLat,
+      initialCoordinates: gridBoundaryCoordinatesRef.current.map((coordinate) => [...coordinate]),
+    };
+    mapRef.current?.dragPan.disable();
+  }
+
+  function handleGridBoundaryDragMove(event) {
+    const dragState = gridBoundaryDragStateRef.current;
+    if (!dragState) {
+      return;
+    }
+
+    const { origin: currentOrigin } = drawStateRef.current;
+    const start = latLngToLocalMeters(dragState.startPoint.lat, dragState.startPoint.lng, currentOrigin);
+    const current = latLngToLocalMeters(event.lngLat.lat, event.lngLat.lng, currentOrigin);
+    setGridBoundaryCoordinates(
+      normalizeGridBoundaryCoordinates(
+        translateGridBoundaryCoordinates(dragState.initialCoordinates, current.x - start.x, current.y - start.y, currentOrigin),
+        currentOrigin,
+      ),
+    );
+  }
+
+  function handleGridBoundaryDragEnd() {
+    if (!gridBoundaryDragStateRef.current) {
+      return;
+    }
+
+    gridBoundaryDragStateRef.current = null;
+    mapRef.current?.dragPan.enable();
+    scheduleGridDraw();
   }
 
   function syncFixedOverlaySources() {
@@ -2289,7 +2628,7 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
       rotationDeg: currentRotationDeg,
       offsetX: currentOffsetX,
       offsetY: currentOffsetY,
-      maskPolygons: fixedOverlays.map(getFixedOverlayCoordinates).filter((coordinates) => coordinates.length === 4),
+      maskPolygons: [gridBoundaryCoordinatesRef.current].filter((polygon) => polygon.length >= 4),
     });
 
     gridSource.setData(data);
