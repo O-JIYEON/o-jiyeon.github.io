@@ -994,10 +994,6 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
         map.touchZoomRotate.disableRotation();
         map.keyboard.enable();
 
-        const marker = new mapboxgl.Marker({ color: "#9cf2bd" })
-          .setLngLat(DEFAULT_CENTER)
-          .setPopup(new mapboxgl.Popup({ offset: 18 }).setHTML("<strong>ECHOTECH</strong><br />Rotate-enabled Mapbox page"))
-          .addTo(map);
         gpsHoverPopupRef.current = new mapboxgl.Popup({
           closeButton: false,
           closeOnClick: false,
@@ -1006,7 +1002,9 @@ export default function MapboxRotatePage({ onBack, mode = "mapbox" }) {
         });
 
         mapRef.current = map;
-        markerRef.current = marker;
+        // 가운데 기본 마커는 현재 비활성화한다.
+        // 필요하면 아래 마커 생성 코드를 다시 복구하면 된다.
+        markerRef.current = null;
 
         const syncStatus = () => {
           const mapCenter = map.getCenter();
