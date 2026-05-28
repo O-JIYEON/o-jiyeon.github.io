@@ -55,12 +55,15 @@ const GRID_BOUNDARY_EDITOR_FILL_LAYER_ID = "echotech-grid-boundary-editor-fill-l
 const GRID_BOUNDARY_EDITOR_LINE_LAYER_ID = "echotech-grid-boundary-editor-line-layer";
 const GRID_SELECTION_SOURCE_ID = "echotech-grid-selection-source";
 const GRID_SELECTION_LAYER_ID = "echotech-grid-selection-layer";
+const FIXED_OVERLAY_LABEL_SOURCE_ID = "echotech-fixed-overlay-label-source";
+const FIXED_OVERLAY_LABEL_LAYER_ID = "echotech-fixed-overlay-label-layer";
 const GRID_BOUNDARY_EDIT_ENABLED = false;
 const FIXED_IMAGE_OVERLAYS = [
   {
     sourceId: "yard-overlay-source-1",
     layerId: "yard-overlay-layer-1",
     name: "yard1",
+    label: "2YARD",
     imageSrc: yard2ImageUrl,
     coordinates: [
       [127.587585, 34.899842],
@@ -73,6 +76,7 @@ const FIXED_IMAGE_OVERLAYS = [
     sourceId: "yard-overlay-source-2",
     layerId: "yard-overlay-layer-2",
     name: "yard2",
+    label: "1YARD",
     imageSrc: yard1ImageUrl,
     coordinates: [
       [127.590772, 34.901531],
@@ -185,6 +189,58 @@ function addLocalVector(point, vector) {
   return {
     x: point.x + vector.x,
     y: point.y + vector.y,
+  };
+}
+
+function getLngLatMidpoint(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== 2 || b.length !== 2) {
+    return null;
+  }
+
+  return {
+    lng: (a[0] + b[0]) / 2,
+    lat: (a[1] + b[1]) / 2,
+  };
+}
+
+function getFixedOverlayLabelPoint(overlay) {
+  const coordinates = getFixedOverlayCoordinates(overlay);
+  if (coordinates.length < 4) {
+    return null;
+  }
+
+  const [, , bottomRight, bottomLeft] = coordinates;
+  const bottomCenter = getLngLatMidpoint(bottomLeft, bottomRight);
+  if (!bottomCenter) {
+    return null;
+  }
+
+  return [bottomCenter.lng, bottomCenter.lat];
+}
+
+function createFixedOverlayLabelGeoJson(overlays) {
+  return {
+    type: "FeatureCollection",
+    features: overlays
+      .filter((overlay) => overlay.label)
+      .map((overlay) => {
+        const point = getFixedOverlayLabelPoint(overlay);
+        if (!point) {
+          return null;
+        }
+
+        return {
+          type: "Feature",
+          geometry: {
+            type: "Point",
+            coordinates: point,
+          },
+          properties: {
+            label: overlay.label,
+          },
+        };
+      })
+      .filter(Boolean),
   };
 }
 
@@ -454,6 +510,7 @@ export default function MapboxRotatePage({ onBack }) {
   const mapRef = useRef(null);
   const mapboxGlRef = useRef(null);
   const markerRef = useRef(null);
+  const infoPopupRef = useRef(null);
   const overlayNameMarkersRef = useRef([]);
   const blockImageMarkersRef = useRef([]);
   const blockRotateHandleRef = useRef(null);
@@ -653,6 +710,9 @@ export default function MapboxRotatePage({ onBack }) {
         map.setPaintProperty(overlay.layerId, "raster-opacity", clampedOpacity);
       }
     });
+    if (map.getLayer(FIXED_OVERLAY_LABEL_LAYER_ID)) {
+      map.setLayoutProperty(FIXED_OVERLAY_LABEL_LAYER_ID, "visibility", fixedOverlayVisible ? "visible" : "none");
+    }
   }, [fixedOverlays, fixedOverlayVisible, fixedOverlayOpacity]);
 
   useEffect(() => {
@@ -708,6 +768,12 @@ export default function MapboxRotatePage({ onBack }) {
         map.dragRotate.enable();
         map.touchZoomRotate.disableRotation();
         map.keyboard.enable();
+        infoPopupRef.current = new mapboxgl.Popup({
+          closeButton: false,
+          closeOnClick: false,
+          anchor: "left",
+          offset: 18,
+        });
 
         mapRef.current = map;
         // 가운데 기본 마커는 현재 비활성화한다.
@@ -734,6 +800,7 @@ export default function MapboxRotatePage({ onBack }) {
           ensureGridBoundaryEditorLayers(map);
           ensureGridSelectionLayer(map);
           ensureFixedImageOverlayLayers(map);
+          ensureFixedOverlayLabelLayer(map);
           ensureMeasurementLayers(map);
           syncStatus();
           scheduleGridDraw();
@@ -800,6 +867,8 @@ export default function MapboxRotatePage({ onBack }) {
       cancelAnimationFrame(fixedOverlayRafRef.current);
       pendingFixedOverlaySourceIdsRef.current.clear();
       window.clearTimeout(fixedOverlayToastTimerRef.current);
+      infoPopupRef.current?.remove();
+      infoPopupRef.current = null;
       markerRef.current?.remove();
       markerRef.current = null;
       mapboxGlRef.current = null;
@@ -873,6 +942,45 @@ export default function MapboxRotatePage({ onBack }) {
         map.moveLayer(overlay.layerId, GRID_LAYER_ID);
       }
     });
+  }
+
+  function ensureFixedOverlayLabelLayer(map) {
+    if (!map.getSource(FIXED_OVERLAY_LABEL_SOURCE_ID)) {
+      map.addSource(FIXED_OVERLAY_LABEL_SOURCE_ID, {
+        type: "geojson",
+        data: createFixedOverlayLabelGeoJson(fixedOverlaysRef.current),
+      });
+    }
+
+    if (!map.getLayer(FIXED_OVERLAY_LABEL_LAYER_ID)) {
+      map.addLayer({
+        id: FIXED_OVERLAY_LABEL_LAYER_ID,
+        type: "symbol",
+        source: FIXED_OVERLAY_LABEL_SOURCE_ID,
+        layout: {
+          visibility: fixedOverlayVisible ? "visible" : "none",
+          "text-field": ["get", "label"],
+          "text-font": ["Open Sans Bold", "Arial Unicode MS Bold"],
+          "text-size": 30,
+          "text-anchor": "top",
+          "text-offset": [0, 1.1],
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+          "text-rotation-alignment": "viewport",
+          "text-pitch-alignment": "viewport",
+        },
+        paint: {
+          "text-color": "#111111",
+          "text-halo-color": "rgba(255, 255, 255, 0.98)",
+          "text-halo-width": 16,
+          "text-halo-blur": 0.6,
+        },
+      });
+    }
+
+    if (map.getLayer(FIXED_OVERLAY_LABEL_LAYER_ID)) {
+      map.moveLayer(FIXED_OVERLAY_LABEL_LAYER_ID);
+    }
   }
 
   function ensureGridBoundaryEditorLayers(map) {
@@ -1029,6 +1137,7 @@ export default function MapboxRotatePage({ onBack }) {
     fixedOverlaysRef.current.forEach((overlay) => {
       syncFixedOverlaySourceById(overlay.sourceId, overlay);
     });
+    syncFixedOverlayLabelSource();
   }
 
   function syncFixedOverlaySourceById(sourceId, overlayCandidate = null) {
@@ -1055,6 +1164,18 @@ export default function MapboxRotatePage({ onBack }) {
     if (map.getLayer(overlay.layerId)) {
       map.setLayoutProperty(overlay.layerId, "visibility", fixedOverlayVisible ? "visible" : "none");
       map.setPaintProperty(overlay.layerId, "raster-opacity", Math.min(1, Math.max(0, Number(fixedOverlayOpacity))));
+    }
+  }
+
+  function syncFixedOverlayLabelSource() {
+    const map = mapRef.current;
+    const source = map?.getSource(FIXED_OVERLAY_LABEL_SOURCE_ID);
+    if (source) {
+      source.setData(createFixedOverlayLabelGeoJson(fixedOverlaysRef.current));
+    }
+
+    if (map?.getLayer(FIXED_OVERLAY_LABEL_LAYER_ID)) {
+      map.setLayoutProperty(FIXED_OVERLAY_LABEL_LAYER_ID, "visibility", fixedOverlayVisible ? "visible" : "none");
     }
   }
 
@@ -1183,6 +1304,38 @@ export default function MapboxRotatePage({ onBack }) {
     fixedOverlayToastTimerRef.current = window.setTimeout(() => {
       setFixedOverlayToastMessage("");
     }, 1800);
+  }
+
+  function buildGridInfoPopupHtml(lngLat) {
+    const {
+      origin: currentOrigin,
+      gridWidth: currentGridWidth,
+      gridHeight: currentGridHeight,
+    } = drawStateRef.current;
+    const gridCellCode = getGridCellCode(
+      lngLat,
+      currentOrigin,
+      currentGridWidth,
+      currentGridHeight,
+      gridBoundaryCoordinatesRef.current,
+    );
+
+    return `
+      <div class="grid-info-popup">
+        <div><strong>좌표</strong>${lngLat.lng.toFixed(6)}, ${lngLat.lat.toFixed(6)}</div>
+        <div><strong>물리번지</strong>${gridCellCode || "-"}</div>
+      </div>
+    `;
+  }
+
+  function showGridInfoPopup(lngLat) {
+    const popup = infoPopupRef.current;
+    const map = mapRef.current;
+    if (!popup || !map || !lngLat) {
+      return;
+    }
+
+    popup.setLngLat(lngLat).setHTML(buildGridInfoPopupHtml(lngLat)).addTo(map);
   }
 
   function syncOverlayNameMarkers() {
@@ -2109,6 +2262,7 @@ export default function MapboxRotatePage({ onBack }) {
           gridBoundaryCoordinatesRef.current,
         ),
       );
+      showGridInfoPopup(event.lngLat);
       return;
     }
 

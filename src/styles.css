@@ -468,6 +468,34 @@ body {
   gap: 8px;
 }
 
+.grid-info-popup {
+  display: grid;
+  gap: 6px;
+  min-width: 200px;
+  color: #17212b;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.grid-info-popup strong {
+  display: inline-block;
+  min-width: 54px;
+  margin-right: 6px;
+  color: #0f1720;
+  font-size: 11px;
+}
+
+.mapboxgl-popup-content .grid-info-popup,
+.mapboxgl-popup-content .grid-info-popup div {
+  color: #17212b;
+}
+
+.mapboxgl-popup-content .grid-info-popup strong {
+  color: #0f1720;
+}
+
 .overlay-list__empty {
   margin: 0;
   color: var(--text-muted);
