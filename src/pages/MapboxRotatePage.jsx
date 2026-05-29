@@ -391,7 +391,7 @@ function getGridCellCode(lngLat, origin, gridWidth, gridHeight, boundaryCoordina
   const columnIndex = Math.min(maxColumns - 1, Math.max(0, Math.floor(xMeters / widthStep)));
   const rowIndex = Math.min(maxRows - 1, Math.max(0, Math.floor(yMeters / heightStep)));
 
-  return `(${formatGridIndex(columnIndex)}, ${formatGridIndex(rowIndex)})`;
+  return `(${formatGridIndex(rowIndex)}, ${formatGridIndex(columnIndex)})`;
 }
 
 function getGridCellSelectionCoordinates(lngLat, origin, gridWidth, gridHeight, boundaryCoordinates) {
