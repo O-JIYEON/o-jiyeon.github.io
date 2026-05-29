@@ -50,12 +50,12 @@ export default function MapboxControlPanel({
 
   return (
     <aside className="control-panel control-panel--mapbox">
-      <button className="back-button" type="button" aria-label="뒤로" onClick={onBack}>
-        &#x2039;
-      </button>
+      {/*<button className="back-button" type="button" aria-label="뒤로" onClick={onBack}>*/}
+      {/*  &#x2039;*/}
+      {/*</button>*/}
 
       <p className="eyebrow">MAPBOX VIEW</p>
-      <h1>Rotate Map</h1>
+      {/*<h1>Rotate Map</h1>*/}
       <section className="dev-panel-block">
         <label className="field">
           <span>지도 타입</span>
@@ -95,15 +95,15 @@ export default function MapboxControlPanel({
         {/*  <input type="number" min="-180" max="180" step="1" value={rotationDeg} onChange={(event) => setRotationDeg(Number(event.target.value))} />*/}
         {/*</label>*/}
 
-        <label className="field">
-          <span>X offset({offsetX}m)</span>
-          <input type="number" min="-200" max="200" step="1" value={offsetX} onChange={(event) => setOffsetX(Number(event.target.value))} />
-        </label>
+        {/*<label className="field">*/}
+        {/*  <span>X offset({offsetX}m)</span>*/}
+        {/*  <input type="number" min="-200" max="200" step="1" value={offsetX} onChange={(event) => setOffsetX(Number(event.target.value))} />*/}
+        {/*</label>*/}
 
-        <label className="field">
-          <span>Y offset({offsetY}m)</span>
-          <input type="number" min="-200" max="200" step="1" value={offsetY} onChange={(event) => setOffsetY(Number(event.target.value))} />
-        </label>
+        {/*<label className="field">*/}
+        {/*  <span>Y offset({offsetY}m)</span>*/}
+        {/*  <input type="number" min="-200" max="200" step="1" value={offsetY} onChange={(event) => setOffsetY(Number(event.target.value))} />*/}
+        {/*</label>*/}
 
         <label className="field">
           <span>지도 회전({bearing}deg)</span>
@@ -120,11 +120,11 @@ export default function MapboxControlPanel({
         {/*  <input type="number" step="0.000001" value={originLngInput} onChange={(event) => setOriginLngInput(event.target.value)} />*/}
         {/*</label>*/}
 
-        <div className="button-row">
-          <button type="button" onClick={applyOriginInput}>
-            원점 적용
-          </button>
-        </div>
+        {/*<div className="button-row">*/}
+        {/*  <button type="button" onClick={applyOriginInput}>*/}
+        {/*    원점 적용*/}
+        {/*  </button>*/}
+        {/*</div>*/}
       </section>
 
       <dl className="status-list">
@@ -132,10 +132,10 @@ export default function MapboxControlPanel({
           <dt>현재 중심</dt>
           <dd>{center}</dd>
         </div>
-        <div>
-          <dt>격자 원점</dt>
-          <dd>{`${origin.lat.toFixed(6)}, ${origin.lng.toFixed(6)}`}</dd>
-        </div>
+        {/*<div>*/}
+        {/*  <dt>격자 원점</dt>*/}
+        {/*  <dd>{`${origin.lat.toFixed(6)}, ${origin.lng.toFixed(6)}`}</dd>*/}
+        {/*</div>*/}
         <div>
           <dt>Zoom</dt>
           <dd>{zoom}</dd>
