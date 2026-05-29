@@ -1,29 +1,16 @@
 export const DEFAULT_CENTER = [127.592328, 34.900905];
-export const DEFAULT_BEARING = -38;
+export const DEFAULT_BEARING = -38.2;
 export const DEFAULT_PITCH = 0;
 export const DEFAULT_GRID_ROTATION = -52;
 export const DEFAULT_GRID_OFFSET_Y = 0;
 export const DEFAULT_GRID_SIZE_METERS = 10;
 export const GRID_BOUNDARY_ROTATION_DEG = -52;
-// Ordered as: top-left, top-right, bottom-right, bottom-left.
-export const FIXED_GRID_BOUNDARY_COORDINATES = [
-  [
-    127.60088252946095,
-    34.90833617854184
-  ],
-  [
-    127.60540046043981,
-    34.903593293520395
-  ],
-  [
-    127.59219450803971,
-    34.89513182550771
-  ],
-  [
-    127.58767657706085,
-    34.899874710529154
-  ]
-];
+// Fill only the rotated rectangle diagonal corners directly.
+// Coordinate format: [lng, lat]
+export const FIXED_GRID_BOUNDARY_DIAGONAL_CORNERS = {
+  topLeft: [127.587697, 34.899819],
+  bottomRight: [127.605496, 34.903593],
+};
 export const DRAWING_SNAP_METERS = 1;
 export const MAX_GRID_RENDER_LINES = 1000;
 export const RAW_MAPBOX_ACCESS_TOKEN = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;

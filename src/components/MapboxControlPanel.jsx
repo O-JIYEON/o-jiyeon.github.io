@@ -107,7 +107,7 @@ export default function MapboxControlPanel({
 
         <label className="field">
           <span>지도 회전({bearing}deg)</span>
-          <input type="number" min="-180" max="180" step="1" value={bearing} onChange={(event) => setMapBearing(Number(event.target.value))} />
+          <input type="number" min="-180" max="180" step="0.1" value={bearing} onChange={(event) => setMapBearing(Number(event.target.value))} />
         </label>
 
         {/*<label className="field">*/}

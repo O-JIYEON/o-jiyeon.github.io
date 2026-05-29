@@ -300,28 +300,15 @@ function buildOrderedMaskGridFeatures(features, polygon, origin, gridWidth, grid
   const bottomRight = latLngToLocalMeters(bottomRightRaw[1], bottomRightRaw[0], origin);
   const bottomLeft = latLngToLocalMeters(bottomLeftRaw[1], bottomLeftRaw[0], origin);
 
-  let topDirection = normalizeVector({ x: bottomRight.x - bottomLeft.x, y: bottomRight.y - bottomLeft.y });
-  let leftDirection = {
-    x: -topDirection.y,
-    y: topDirection.x,
-  };
-  const rawBottomDirection = { x: bottomRight.x - bottomLeft.x, y: bottomRight.y - bottomLeft.y };
-  if (dotProduct(topDirection, rawBottomDirection) < 0) {
-    topDirection = scaleVector(topDirection, -1);
-    leftDirection = scaleVector(leftDirection, -1);
-  }
-
-  const rawLeftDirection = { x: topLeft.x - bottomLeft.x, y: topLeft.y - bottomLeft.y };
-  if (dotProduct(leftDirection, rawLeftDirection) < 0) {
-    leftDirection = scaleVector(leftDirection, -1);
-  }
+  const topDirection = normalizeVector({ x: topRight.x - topLeft.x, y: topRight.y - topLeft.y });
+  const downDirection = normalizeVector({ x: bottomLeft.x - topLeft.x, y: bottomLeft.y - topLeft.y });
 
   const usableWidth = Math.max(
     0,
     dotProduct(
       {
-        x: bottomRight.x - bottomLeft.x,
-        y: bottomRight.y - bottomLeft.y,
+        x: topRight.x - topLeft.x,
+        y: topRight.y - topLeft.y,
       },
       topDirection,
     ),
@@ -329,17 +316,20 @@ function buildOrderedMaskGridFeatures(features, polygon, origin, gridWidth, grid
   const usableHeight = Math.max(
     0,
     dotProduct(
-      rawLeftDirection,
-      leftDirection,
+      {
+        x: bottomLeft.x - topLeft.x,
+        y: bottomLeft.y - topLeft.y,
+      },
+      downDirection,
     ),
   );
   const epsilon = 0.0001;
-  const snappedWidth = Math.floor((usableWidth + epsilon) / gridWidth) * gridWidth;
-  const snappedHeight = Math.floor((usableHeight + epsilon) / gridHeight) * gridHeight;
-  const snappedBottomLeft = bottomLeft;
-  const snappedBottomRight = addVector(bottomLeft, scaleVector(topDirection, snappedWidth));
-  const snappedTopLeft = addVector(bottomLeft, scaleVector(leftDirection, snappedHeight));
-  const snappedTopRight = addVector(snappedTopLeft, scaleVector(topDirection, snappedWidth));
+  const snappedWidth = Math.ceil(Math.max(0, usableWidth - epsilon) / gridWidth) * gridWidth;
+  const snappedHeight = Math.ceil(Math.max(0, usableHeight - epsilon) / gridHeight) * gridHeight;
+  const snappedTopLeft = topLeft;
+  const snappedTopRight = addVector(topLeft, scaleVector(topDirection, snappedWidth));
+  const snappedBottomLeft = addVector(topLeft, scaleVector(downDirection, snappedHeight));
+  const snappedBottomRight = addVector(snappedBottomLeft, scaleVector(topDirection, snappedWidth));
   const snappedBoundary = [
     localMetersToLatLng(snappedTopLeft.x, snappedTopLeft.y, origin),
     localMetersToLatLng(snappedTopRight.x, snappedTopRight.y, origin),
@@ -355,12 +345,12 @@ function buildOrderedMaskGridFeatures(features, polygon, origin, gridWidth, grid
 
   for (let offset = gridWidth; offset < snappedWidth - epsilon; offset += gridWidth) {
     const start = {
-      x: bottomLeft.x + topDirection.x * offset,
-      y: bottomLeft.y + topDirection.y * offset,
+      x: topLeft.x + topDirection.x * offset,
+      y: topLeft.y + topDirection.y * offset,
     };
     const end = {
-      x: start.x + leftDirection.x * snappedHeight,
-      y: start.y + leftDirection.y * snappedHeight,
+      x: start.x + downDirection.x * snappedHeight,
+      y: start.y + downDirection.y * snappedHeight,
     };
     const startCoord = localMetersToLatLng(start.x, start.y, origin);
     const endCoord = localMetersToLatLng(end.x, end.y, origin);
@@ -369,8 +359,8 @@ function buildOrderedMaskGridFeatures(features, polygon, origin, gridWidth, grid
 
   for (let offset = gridHeight; offset < snappedHeight - epsilon; offset += gridHeight) {
     const start = {
-      x: bottomLeft.x + leftDirection.x * offset,
-      y: bottomLeft.y + leftDirection.y * offset,
+      x: topLeft.x + downDirection.x * offset,
+      y: topLeft.y + downDirection.y * offset,
     };
     const end = {
       x: start.x + topDirection.x * snappedWidth,
