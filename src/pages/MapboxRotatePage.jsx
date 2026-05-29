@@ -1351,10 +1351,20 @@ export default function MapboxRotatePage({ onBack }) {
       currentGridHeight,
       gridBoundaryCoordinatesRef.current,
     );
+    const selectedCellCoordinates = getGridCellSelectionCoordinates(
+      lngLat,
+      currentOrigin,
+      currentGridWidth,
+      currentGridHeight,
+      gridBoundaryCoordinatesRef.current,
+    );
+    const displayCoordinate = selectedCellCoordinates[0]
+      ? `${selectedCellCoordinates[0][0].toFixed(6)}, ${selectedCellCoordinates[0][1].toFixed(6)}`
+      : `${lngLat.lng.toFixed(6)}, ${lngLat.lat.toFixed(6)}`;
 
     return `
       <div class="grid-info-popup">
-        <div><strong>좌표</strong>${lngLat.lng.toFixed(6)}, ${lngLat.lat.toFixed(6)}</div>
+        <div><strong>좌표</strong>${displayCoordinate}</div>
         <div><strong>물리지번</strong>${gridCellCode || "-"}</div>
       </div>
     `;
