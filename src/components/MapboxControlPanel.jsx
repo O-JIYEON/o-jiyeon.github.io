@@ -50,9 +50,11 @@ export default function MapboxControlPanel({
 
   return (
     <aside className="control-panel control-panel--mapbox">
-      {/*<button className="back-button" type="button" aria-label="뒤로" onClick={onBack}>*/}
-      {/*  &#x2039;*/}
-      {/*</button>*/}
+      {onBack ? (
+        <button className="back-button" type="button" aria-label="뒤로" onClick={onBack}>
+          &#x2039;
+        </button>
+      ) : null}
 
       <p className="eyebrow">MAPBOX VIEW</p>
       {/*<h1>Rotate Map</h1>*/}
