@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import GpsTestPage from "./pages/GpsTestPage";
 import MapboxRotatePage from "./pages/MapboxRotatePage";
 import NaverGridPage from "./pages/NaverGridPage";
 
@@ -6,6 +7,7 @@ const ROUTES = {
   home: "home",
   naver: "naver-grid",
   mapbox: "mapbox",
+  gpsTest: "gps-test",
 };
 
 function getRouteFromHash() {
@@ -46,6 +48,9 @@ function HomePage() {
           <button type="button" onClick={() => navigateTo(ROUTES.mapbox)}>
             Mapbox 편집 지도
           </button>
+          <button type="button" onClick={() => navigateTo(ROUTES.gpsTest)}>
+            GPS 테스트
+          </button>
         </div>
       </div>
     </main>
@@ -67,6 +72,10 @@ export default function App() {
 
   if (route === ROUTES.mapbox) {
     return <MapboxRotatePage onBack={() => navigateTo(ROUTES.home)} />;
+  }
+
+  if (route === ROUTES.gpsTest) {
+    return <GpsTestPage onBack={() => navigateTo(ROUTES.home)} />;
   }
 
   return <HomePage />;

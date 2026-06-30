@@ -474,15 +474,76 @@ function cloneFixedImageOverlays() {
   }));
 }
 
-function getFixedOverlayHostElement(map) {
-  const panes = map?.getPanes?.();
-  return (
-    panes?.overlayImage ||
-    panes?.floatPane ||
-    panes?.overlayLayer ||
-    panes?.overlayMouseTarget ||
-    null
-  );
+function createFixedOverlayView(naver, overlay, opacity) {
+  function FixedOverlayView() {
+    this.root = document.createElement("div");
+    this.root.className = "fixed-overlay-layer";
+
+    this.imageNode = document.createElement("div");
+    this.imageNode.className = "fixed-overlay-warp";
+    this.imageNode.style.backgroundImage = `url("${overlay.imageSrc}")`;
+    this.imageNode.style.opacity = String(opacity);
+
+    this.labelNode = document.createElement("div");
+    this.labelNode.className = "fixed-overlay-label fixed-overlay-label--floating";
+    this.labelNode.textContent = overlay.label;
+
+    this.root.appendChild(this.imageNode);
+    this.root.appendChild(this.labelNode);
+  }
+
+  FixedOverlayView.prototype = new naver.maps.OverlayView();
+  FixedOverlayView.prototype.constructor = FixedOverlayView;
+
+  FixedOverlayView.prototype.onAdd = function onAdd() {
+    const panes = this.getPanes();
+    panes?.overlayImage?.appendChild(this.root);
+  };
+
+  FixedOverlayView.prototype.draw = function draw() {
+    const projection = this.getProjection();
+    if (!projection) {
+      return;
+    }
+
+    const [topLeft, topRight, bottomRight, bottomLeft] = overlay.coordinates;
+    if (!topLeft || !topRight || !bottomRight || !bottomLeft) {
+      return;
+    }
+
+    const projectedTopLeft = projection.fromCoordToOffset(new naver.maps.LatLng(topLeft[1], topLeft[0]));
+    const projectedTopRight = projection.fromCoordToOffset(new naver.maps.LatLng(topRight[1], topRight[0]));
+    const projectedBottomLeft = projection.fromCoordToOffset(new naver.maps.LatLng(bottomLeft[1], bottomLeft[0]));
+    const projectedBottomRight = projection.fromCoordToOffset(new naver.maps.LatLng(bottomRight[1], bottomRight[0]));
+
+    if (!projectedTopLeft || !projectedTopRight || !projectedBottomLeft || !projectedBottomRight) {
+      return;
+    }
+
+    const u = {
+      x: projectedTopRight.x - projectedTopLeft.x,
+      y: projectedTopRight.y - projectedTopLeft.y,
+    };
+    const v = {
+      x: projectedBottomLeft.x - projectedTopLeft.x,
+      y: projectedBottomLeft.y - projectedTopLeft.y,
+    };
+
+    this.imageNode.style.transform = `matrix(${u.x}, ${u.y}, ${v.x}, ${v.y}, ${projectedTopLeft.x}, ${projectedTopLeft.y})`;
+
+    const centerX =
+      (projectedTopLeft.x + projectedTopRight.x + projectedBottomLeft.x + projectedBottomRight.x) / 4;
+    const centerY =
+      (projectedTopLeft.y + projectedTopRight.y + projectedBottomLeft.y + projectedBottomRight.y) / 4;
+    this.labelNode.style.left = `${centerX}px`;
+    this.labelNode.style.top = `${centerY}px`;
+  };
+
+  FixedOverlayView.prototype.onRemove = function onRemove() {
+    this.root.remove();
+  };
+
+  return new FixedOverlayView();
 }
 
 export default function NaverGridPage({ onBack }) {
@@ -493,7 +554,6 @@ export default function NaverGridPage({ onBack }) {
   const trackLinesRef = useRef([]);
   const selectionPolygonRef = useRef(null);
   const infoWindowRef = useRef(null);
-  const fixedOverlayContainerRef = useRef(null);
   const fixedOverlayRefs = useRef([]);
   const measureOverlayRefs = useRef([]);
   const statusTextRef = useRef({
@@ -623,12 +683,6 @@ export default function NaverGridPage({ onBack }) {
         });
 
         mapRef.current = map;
-        const fixedOverlayContainer = document.createElement("div");
-        fixedOverlayContainer.className = "fixed-overlay-layer";
-        const fixedOverlayHost = getFixedOverlayHostElement(map);
-        const usableHost = fixedOverlayHost ?? mapRootRef.current;
-        usableHost?.appendChild(fixedOverlayContainer);
-        fixedOverlayContainerRef.current = fixedOverlayContainer;
         infoWindowRef.current = new naver.maps.InfoWindow({
           content: "",
           borderWidth: 0,
@@ -667,8 +721,6 @@ export default function NaverGridPage({ onBack }) {
       clearSelectionPolygon();
       clearFixedOverlays();
       clearMeasureOverlays();
-      fixedOverlayContainerRef.current?.remove();
-      fixedOverlayContainerRef.current = null;
       infoWindowRef.current?.close();
       infoWindowRef.current = null;
       mapEventsRef.current.forEach((listener) => {
@@ -840,7 +892,7 @@ export default function NaverGridPage({ onBack }) {
   }
 
   function clearFixedOverlays() {
-    fixedOverlayRefs.current.forEach((entry) => entry.node?.remove?.());
+    fixedOverlayRefs.current.forEach((entry) => entry?.setMap?.(null));
     fixedOverlayRefs.current = [];
   }
 
@@ -856,102 +908,25 @@ export default function NaverGridPage({ onBack }) {
     measureOverlayRefs.current.push({ overlay, listeners });
   }
 
-  function projectLatLngToContainerPoint(map, naver, lat, lng) {
-    const latLng = new naver.maps.LatLng(lat, lng);
-    const projection = map.getProjection?.();
-
-    if (projection?.fromCoordToOffset) {
-      const point = projection.fromCoordToOffset(latLng);
-      if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
-        return point;
-      }
-    }
-
-    return null;
-  }
-
   function renderFixedOverlays() {
     const map = mapRef.current;
     const naver = window.naver;
-    const container = fixedOverlayContainerRef.current;
-
-    if (!map || !naver?.maps || !container) {
+    if (!map || !naver?.maps) {
       return;
     }
 
+    clearFixedOverlays();
+
     if (!fixedOverlayVisible) {
-      fixedOverlayRefs.current.forEach((entry) => {
-        if (entry.node) {
-          entry.node.style.display = "none";
-        }
-      });
       return;
     }
 
     const safeOpacity = Math.min(1, Math.max(0, Number(fixedOverlayOpacity) || 0));
 
     fixedOverlays.forEach((overlay) => {
-      const [topLeft, topRight, bottomRight, bottomLeft] = overlay.coordinates;
-      if (!topLeft || !topRight || !bottomRight || !bottomLeft) {
-        return;
-      }
-
-      const projectedTopLeft = projectLatLngToContainerPoint(map, naver, topLeft[1], topLeft[0]);
-      const projectedTopRight = projectLatLngToContainerPoint(map, naver, topRight[1], topRight[0]);
-      const projectedBottomLeft = projectLatLngToContainerPoint(map, naver, bottomLeft[1], bottomLeft[0]);
-      const projectedBottomRight = projectLatLngToContainerPoint(map, naver, bottomRight[1], bottomRight[0]);
-      if (!projectedTopLeft || !projectedTopRight || !projectedBottomLeft || !projectedBottomRight) {
-        return;
-      }
-
-      const u = {
-        x: projectedTopRight.x - projectedTopLeft.x,
-        y: projectedTopRight.y - projectedTopLeft.y,
-      };
-      const v = {
-        x: projectedBottomLeft.x - projectedTopLeft.x,
-        y: projectedBottomLeft.y - projectedTopLeft.y,
-      };
-
-      let imageEntry = fixedOverlayRefs.current.find((entry) => entry.id === `${overlay.id}:image`);
-      if (!imageEntry) {
-        const node = document.createElement("div");
-        node.className = "fixed-overlay-warp";
-        node.style.backgroundImage = `url("${overlay.imageSrc}")`;
-        container.appendChild(node);
-        imageEntry = {
-          id: `${overlay.id}:image`,
-          node,
-        };
-        fixedOverlayRefs.current.push(imageEntry);
-      }
-
-      const node = imageEntry.node;
-      node.style.display = "";
-      node.style.opacity = String(safeOpacity);
-      node.style.transform = `matrix(${u.x}, ${u.y}, ${v.x}, ${v.y}, ${projectedTopLeft.x}, ${projectedTopLeft.y})`;
-
-      let labelEntry = fixedOverlayRefs.current.find((entry) => entry.id === `${overlay.id}:label`);
-      if (!labelEntry) {
-        const labelNode = document.createElement("div");
-        labelNode.className = "fixed-overlay-label fixed-overlay-label--floating";
-        labelNode.textContent = overlay.label;
-        container.appendChild(labelNode);
-        labelEntry = {
-          id: `${overlay.id}:label`,
-          node: labelNode,
-        };
-        fixedOverlayRefs.current.push(labelEntry);
-      }
-
-      const labelNode = labelEntry.node;
-      labelNode.style.display = "";
-      const centerX =
-        (projectedTopLeft.x + projectedTopRight.x + projectedBottomLeft.x + projectedBottomRight.x) / 4;
-      const centerY =
-        (projectedTopLeft.y + projectedTopRight.y + projectedBottomLeft.y + projectedBottomRight.y) / 4;
-      labelNode.style.left = `${centerX}px`;
-      labelNode.style.top = `${centerY}px`;
+      const overlayView = createFixedOverlayView(naver, overlay, safeOpacity);
+      overlayView.setMap(map);
+      fixedOverlayRefs.current.push(overlayView);
     });
   }
 
@@ -1365,7 +1340,6 @@ export default function NaverGridPage({ onBack }) {
     if (!currentGridVisible) {
       setRenderCount(0);
       updateStatusText(map);
-      renderFixedOverlays();
       return;
     }
 
@@ -1373,7 +1347,6 @@ export default function NaverGridPage({ onBack }) {
     if (!metrics) {
       setRenderCount(0);
       updateStatusText(map);
-      renderFixedOverlays();
       return;
     }
 
@@ -1386,7 +1359,6 @@ export default function NaverGridPage({ onBack }) {
     if (estimatedLineCount > MAX_GRID_RENDER_LINES) {
       setRenderCount(estimatedLineCount);
       updateStatusText(map);
-      renderFixedOverlays();
       return;
     }
 
@@ -1438,7 +1410,6 @@ export default function NaverGridPage({ onBack }) {
 
     setRenderCount(lines);
     updateStatusText(map);
-    renderFixedOverlays();
   }
 
   function updateStatusText(map) {
