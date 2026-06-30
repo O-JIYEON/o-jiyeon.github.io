@@ -1,4 +1,5 @@
 export default function GpsTestPanel({
+  panelRef,
   gpsSessions,
   gpsSessionsLoading,
   gpsSessionsError,
@@ -8,11 +9,15 @@ export default function GpsTestPanel({
   gpsTrackSummary,
   formatGpsSessionDate,
   getGpsResultRows,
+  playbackIndex,
+  playbackTotal,
+  isPlaybackRunning,
   onRefresh,
   onSelectSession,
+  onStartPlayback,
 }) {
   return (
-    <aside className="gps-test-panel" aria-label="GPS 테스트 결과 패널">
+    <aside ref={panelRef} className="gps-test-panel" aria-label="GPS 테스트 결과 패널">
       <p className="eyebrow">GPS TEST</p>
       <h2>GPS 테스트 결과</h2>
       <section className="gps-session-list-section" aria-label="GPS 세션 목록">
@@ -50,7 +55,30 @@ export default function GpsTestPanel({
               >
                 <div className="gps-session-card__header">
                   <strong>{session.name || "이름 없는 세션"}</strong>
-                  <span>{session.pointCount ?? 0} pts</span>
+                  {selectedGpsSessionId === session.id && playbackTotal > 0 ? (
+                    <div className="gps-session-card__playback">
+                      <button
+                        type="button"
+                        className="gps-session-card__playback-track"
+                        aria-label="경로 순차 재생"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onStartPlayback();
+                        }}
+                      >
+                        <div
+                          className="gps-session-card__playback-fill"
+                          style={{
+                            width: `${playbackTotal > 0 ? Math.min((playbackIndex / playbackTotal) * 100, 100) : 0}%`,
+                          }}
+                        />
+                        {!isPlaybackRunning ? <span className="gps-session-card__playback-trigger">▶</span> : null}
+                      </button>
+                      <span>{`${playbackIndex}/${playbackTotal} pts`}</span>
+                    </div>
+                  ) : (
+                    <span>{session.pointCount ?? 0} pts</span>
+                  )}
                 </div>
                 <dl className="gps-session-card__meta">
                   <div>
